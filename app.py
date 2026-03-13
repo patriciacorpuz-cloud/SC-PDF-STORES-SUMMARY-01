@@ -4,8 +4,17 @@ import pandas as pd
 import re
 import io
 import json
+import base64
 from pathlib import Path
 import plotly.graph_objects as go
+
+# ─── LOGO (embedded for print reports) ─────────────────────────────────────────
+_LOGO_PATH = Path(__file__).parent / "assets" / "tag_logo.png"
+try:
+    with open(_LOGO_PATH, "rb") as _f:
+        LOGO_B64 = base64.b64encode(_f.read()).decode()
+except Exception:
+    LOGO_B64 = ""
 
 # ─── PAGE CONFIG ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -299,13 +308,164 @@ def clean_numeric(series: pd.Series) -> pd.Series:
 
 # ─── PRINT HTML GENERATORS ──────────────────────────────────────────────────────
 
-def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) -> str:
-    """Generates a print-ready Outside/Location Picklist (matches manual format)."""
+def _print_header_html(report_label: str, meta_rows: list[tuple]) -> str:
+    """Shared branded header for all print reports.
+    meta_rows: list of (label, value, highlight) tuples.
+    """
+    logo_tag = (
+        f'<img src="data:image/png;base64,{LOGO_B64}" class="logo" alt="The Abaca Group">'
+        if LOGO_B64 else
+        '<div class="logo-text">THE ABACÁ GROUP</div>'
+    )
+    meta_html = "".join(
+        f'<tr><td class="ml">{lbl}</td>'
+        f'<td class="mv{"h" if hi else ""}">{val}</td></tr>'
+        for lbl, val, hi in meta_rows
+    )
+    return f"""
+<div class="brand-header">
+  <div class="brand-left">
+    {logo_tag}
+    <div class="brand-sub">Supply Chain · Commissary</div>
+  </div>
+  <div class="brand-right">
+    <div class="report-label">{report_label}</div>
+    <table class="meta-table">{meta_html}</table>
+  </div>
+</div>
+<div class="gold-rule"></div>
+"""
 
-    # Sort by item, then store
+
+def _print_base_css() -> str:
+    return """
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Arial', sans-serif;
+    font-size: 10pt;
+    color: #1a1a1a;
+    background: #ffffff;
+    margin: 18mm 16mm 14mm 16mm;
+  }
+  /* ── Branded header ── */
+  .brand-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 8px;
+  }
+  .brand-left { display: flex; flex-direction: column; justify-content: center; }
+  .logo {
+    height: 38px;
+    width: auto;
+    filter: invert(1) brightness(0);   /* white PNG → solid black */
+  }
+  .logo-text {
+    font-size: 13pt;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: #1a1a1a;
+  }
+  .brand-sub {
+    font-size: 7.5pt;
+    color: #777;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+  .brand-right { text-align: right; }
+  .report-label {
+    font-size: 15pt;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #1a1a1a;
+    text-transform: uppercase;
+  }
+  .meta-table { margin-top: 4px; border-collapse: collapse; margin-left: auto; }
+  .meta-table td { padding: 1px 6px; font-size: 8.5pt; }
+  .ml { font-weight: 600; color: #555; text-align: right; }
+  .mv { font-weight: 500; color: #1a1a1a; }
+  .mvh { font-weight: 700; color: #b5821a; }   /* highlight = gold-ish */
+  /* ── Gold rule ── */
+  .gold-rule {
+    height: 2.5px;
+    background: #C9A96E;
+    margin-bottom: 10px;
+  }
+  /* ── Data tables ── */
+  table.data {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 14px;
+    font-size: 9pt;
+  }
+  table.data th {
+    background: #1a1a1a;
+    color: #ffffff;
+    border: 1px solid #1a1a1a;
+    padding: 5px 8px;
+    text-align: left;
+    font-size: 8.5pt;
+    letter-spacing: 0.04em;
+  }
+  table.data td {
+    border: 1px solid #d0d0d0;
+    padding: 4px 8px;
+    vertical-align: middle;
+  }
+  table.data tbody tr:nth-child(even) td { background: #f7f5f2; }
+  /* ── Summary / totals ── */
+  .summary-section-header td {
+    background: #f0ebe2;
+    border: 1px solid #C9A96E;
+    font-weight: 700;
+    font-size: 8.5pt;
+    padding: 5px 8px;
+    letter-spacing: 0.04em;
+    color: #7a5c1e;
+  }
+  .total-row td {
+    background: #f0ebe2;
+    border: 1px solid #C9A96E;
+    font-weight: 700;
+    color: #7a5c1e;
+  }
+  /* ── Footer ── */
+  .print-footer {
+    margin-top: 12px;
+    padding-top: 5px;
+    border-top: 1px solid #ddd;
+    font-size: 7.5pt;
+    color: #aaa;
+    display: flex;
+    justify-content: space-between;
+  }
+  /* ── Print button (screen only) ── */
+  .print-btn {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 8px 24px;
+    font-size: 10.5pt;
+    cursor: pointer;
+    background: #1a1a1a;
+    color: #C9A96E;
+    border: 1.5px solid #C9A96E;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  @media print {
+    body { margin: 10mm 12mm; }
+    .print-btn { display: none; }
+  }
+"""
+
+
+def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) -> str:
+    """Generates a branded print-ready Picklist."""
+
     df_sorted = df_loc.sort_values(['Item Description', 'Store'])
 
-    # Build rows
     detail_rows_html = ""
     for _, r in df_sorted.iterrows():
         detail_rows_html += f"""
@@ -315,7 +475,6 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
 
-    # Build summary
     summary = (
         df_loc.groupby('Item Description')['Order Qty']
         .sum().reset_index()
@@ -327,55 +486,33 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
         <tr>
           <td>{r['Item Description']}</td>
           <td></td>
-          <td style="text-align:center; font-weight:bold;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
+          <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
+
+    header = _print_header_html(
+        f"{location} — PICK LIST",
+        [
+            ("Delivery Date:", delivery_date, True),
+            ("Location:", location, False),
+            ("Total Lines:", str(len(df_sorted)), False),
+        ]
+    )
 
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>{location} PICKLIST</title>
-<style>
-  body {{ font-family: Arial, sans-serif; font-size: 10pt; margin: 20px; }}
-  .title {{ font-size: 14pt; font-weight: bold; text-align: center;
-            background: #d0d0f0; padding: 8px; border: 1px solid #999; margin-bottom: 0; }}
-  .header-table {{ width: 100%; border-collapse: collapse; margin-bottom: 12px; }}
-  .header-table td {{ padding: 4px 8px; border: 1px solid #999; font-size: 10pt; }}
-  .date-red {{ color: red; font-weight: bold; }}
-  table.data {{ width: 100%; border-collapse: collapse; margin-bottom: 14px; }}
-  table.data th {{
-    background: #cccccc; border: 1px solid #666;
-    padding: 5px 8px; font-size: 9pt; text-align: left;
-  }}
-  table.data td {{ border: 1px solid #aaa; padding: 4px 8px; font-size: 9pt; }}
-  .summary-header td {{
-    background: #FFFF00; font-weight: bold; border: 1px solid #666;
-    padding: 5px 8px; font-size: 9pt;
-  }}
-  .summary-row td {{ background: #FFFACD; border: 1px solid #aaa; padding: 4px 8px; font-size: 9pt; }}
-  @media print {{
-    body {{ margin: 10mm; }}
-    button {{ display: none; }}
-  }}
-</style>
+<style>{_print_base_css()}</style>
 </head>
 <body>
-<div class="title">{location} PICKLIST</div>
-<table class="header-table">
-  <tr>
-    <td><b>DELIVERY DATE:</b></td>
-    <td class="date-red">{delivery_date}</td>
-    <td><b>LOCATION:</b></td>
-    <td>{location}</td>
-  </tr>
-</table>
-
+{header}
 <table class="data">
   <thead>
     <tr>
       <th>STORE NAME</th>
       <th>ITEM DESCRIPTION</th>
-      <th>QTY</th>
+      <th style="text-align:center; width:70px;">QTY</th>
     </tr>
   </thead>
   <tbody>
@@ -385,8 +522,13 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
 
 <table class="data">
   <thead>
-    <tr class="summary-header">
-      <td colspan="3"><b>SUMMARY QTY</b></td>
+    <tr class="summary-section-header">
+      <td colspan="3">SUMMARY QTY</td>
+    </tr>
+    <tr>
+      <th>ITEM DESCRIPTION</th>
+      <th></th>
+      <th style="text-align:center; width:70px;">TOTAL QTY</th>
     </tr>
   </thead>
   <tbody>
@@ -394,16 +536,17 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
   </tbody>
 </table>
 
-<button onclick="window.print()" style="margin-top:12px; padding:8px 20px;
-  font-size:11pt; cursor:pointer; background:#444; color:white; border:none; border-radius:4px;">
-  🖨 Print
-</button>
+<div class="print-footer">
+  <span>SC_PDF STORES SUMMARY_01 · The Abaca Group</span>
+  <span>Pick List · {location}</span>
+</div>
+<button class="print-btn" onclick="window.print()">🖨&nbsp; Print</button>
 </body>
 </html>"""
 
 
 def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: str) -> str:
-    """Generates a print-ready Item Allocation sheet (matches Eggs / Milk format)."""
+    """Generates a branded print-ready Item Allocation sheet."""
 
     store_summary = (
         df_item.groupby('Store')['Order Qty']
@@ -420,9 +563,18 @@ def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: s
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
 
-    # UOM
     uom_vals = df_item['UOM'].dropna().unique()
     uom = uom_vals[0] if len(uom_vals) > 0 else ""
+
+    header = _print_header_html(
+        f"{item_name} — ORDER",
+        [
+            ("Delivery Date:", delivery_date, True),
+            ("UOM:", uom, False),
+            ("Total Stores:", str(len(store_summary)), False),
+            ("Total Qty:", str(total_qty), False),
+        ]
+    )
 
     return f"""<!DOCTYPE html>
 <html>
@@ -430,60 +582,33 @@ def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: s
 <meta charset="utf-8">
 <title>{item_name} — ORDER</title>
 <style>
-  body {{ font-family: Arial, sans-serif; font-size: 10pt; margin: 20px; max-width: 500px; }}
-  .title {{
-    font-size: 13pt; font-weight: bold; text-align: center;
-    background: #d0d0f0; padding: 8px; border: 1px solid #999; margin-bottom: 0;
-  }}
-  table.data {{ width: 100%; border-collapse: collapse; }}
-  table.data th {{
-    background: #cccccc; border: 1px solid #666;
-    padding: 5px 10px; font-size: 10pt;
-  }}
-  table.data td {{ border: 1px solid #aaa; padding: 5px 10px; font-size: 10pt; }}
-  .header-row td {{ border: 1px solid #999; padding: 5px 10px; }}
-  .label-col {{ font-weight: bold; }}
-  .date-red {{ color: red; font-weight: bold; }}
-  .total-row td {{ background: #FFFF00; font-weight: bold; border: 1px solid #666; padding: 5px 10px; }}
-  @media print {{
-    body {{ margin: 10mm; }}
-    button {{ display: none; }}
-  }}
+{_print_base_css()}
+  body {{ max-width: 520px; }}
 </style>
 </head>
 <body>
-<div class="title">{item_name}</div>
-<table class="data" style="margin-bottom:12px;">
-  <tr class="header-row">
-    <td class="label-col">DELIVERY DATE:</td>
-    <td class="date-red">{delivery_date}</td>
-  </tr>
-  <tr class="header-row">
-    <td class="label-col">UOM:</td>
-    <td>{uom}</td>
-  </tr>
-</table>
-
+{header}
 <table class="data">
   <thead>
     <tr>
       <th>STORE NAME</th>
-      <th>QTY</th>
+      <th style="text-align:center; width:90px;">QTY</th>
     </tr>
   </thead>
   <tbody>
     {rows_html}
     <tr class="total-row">
-      <td>TOTAL</td>
-      <td style="text-align:center;">{total_qty}</td>
+      <td><b>TOTAL</b></td>
+      <td style="text-align:center;"><b>{total_qty}</b></td>
     </tr>
   </tbody>
 </table>
 
-<button onclick="window.print()" style="margin-top:12px; padding:8px 20px;
-  font-size:11pt; cursor:pointer; background:#444; color:white; border:none; border-radius:4px;">
-  🖨 Print
-</button>
+<div class="print-footer">
+  <span>SC_PDF STORES SUMMARY_01 · The Abaca Group</span>
+  <span>Item Allocation · {item_name}</span>
+</div>
+<button class="print-btn" onclick="window.print()">🖨&nbsp; Print</button>
 </body>
 </html>"""
 
@@ -517,8 +642,8 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
             span = rowspan_map.get(idx, 1)
             remark_val = r.get('remarks', '') or ''
             rs_attr = f' rowspan="{span}"' if span > 1 else ''
-            bg = ' style="background:#fff8dc; vertical-align:middle; font-weight:bold;"' if span > 1 else ''
-            remarks_cell = f'<td{rs_attr}{bg}>{remark_val}</td>'
+            cls = ' class="remarks-cell"' if remark_val else ''
+            remarks_cell = f'<td{rs_attr}{cls}>{remark_val}</td>'
             # Mark subsequent rows in this group to skip the remarks cell
             for k in range(idx + 1, idx + span):
                 skip_remarks.add(k)
@@ -532,68 +657,45 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
           {remarks_cell}
         </tr>"""
 
+    header = _print_header_html(
+        report_title,
+        [
+            ("Order Date:", order_date, False),
+            ("Delivery Date:", delivery_date, True),
+            ("Prepared by:", prepared_by.upper(), False),
+            ("Total Items:", str(len(sorted_rows)), False),
+        ]
+    )
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>{report_title}</title>
 <style>
-  body {{ font-family: Arial, sans-serif; font-size: 10pt; margin: 20px; }}
-  .outer-table {{ width:100%; border-collapse:collapse; margin-bottom:0; }}
-  .outer-table td {{ border:1px solid #999; vertical-align:middle; padding:6px 10px; }}
-  .title-cell {{
-    font-size:16pt; font-weight:bold; text-align:center;
-    background:#e8e8f0; letter-spacing:0.05em;
-  }}
-  .meta-label {{ font-size:9pt; font-weight:bold; color:#444; }}
-  .meta-value {{ font-size:10pt; font-weight:bold; }}
-  table.data {{ width:100%; border-collapse:collapse; margin-top:10px; }}
-  table.data th {{
-    background:#cccccc; border:1px solid #666;
-    padding:6px 8px; font-size:9pt; text-align:left;
-  }}
-  table.data td {{ border:1px solid #aaa; padding:5px 8px; font-size:9pt; }}
-  table.data tr:nth-child(even) td {{ background:#f9f9f9; }}
-  .footer {{
-    margin-top:14px; font-size:8pt; color:#666;
-    border-top:1px solid #ccc; padding-top:6px;
-  }}
-  @media print {{
-    body {{ margin:10mm; }}
-    button {{ display:none; }}
+{_print_base_css()}
+  /* Remarks cell styling */
+  table.data td.remarks-cell {{
+    background: #fdf8ee;
+    border-left: 3px solid #C9A96E;
+    font-weight: 600;
+    font-style: italic;
+    color: #7a5c1e;
+    vertical-align: middle;
   }}
 </style>
 </head>
 <body>
-
-<table class="outer-table">
-  <tr>
-    <td rowspan="3" style="width:50%;"> </td>
-    <td class="title-cell" colspan="2">{report_title}</td>
-  </tr>
-  <tr>
-    <td class="meta-label">ORDER DATE:</td>
-    <td class="meta-value">{order_date}</td>
-  </tr>
-  <tr>
-    <td class="meta-label">DELIVERY DATE:</td>
-    <td class="meta-value" style="color:#cc0000; font-weight:bold;">{delivery_date}</td>
-  </tr>
-  <tr>
-    <td></td>
-    <td class="meta-label">PREPARED BY:</td>
-    <td class="meta-value">{prepared_by.upper()}</td>
-  </tr>
-</table>
+{header}
 
 <table class="data">
   <thead>
     <tr>
-      <th>DATE</th>
+      <th style="width:90px;">DATE</th>
       <th>STORE NAME</th>
       <th>ITEM DESCRIPTION</th>
-      <th>QTY</th>
-      <th>REMARKS</th>
+      <th style="text-align:center; width:55px;">QTY</th>
+      <th style="width:200px;">REMARKS</th>
     </tr>
   </thead>
   <tbody>
@@ -601,15 +703,12 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
   </tbody>
 </table>
 
-<div class="footer">
-  Generated by SC_PDF STORES SUMMARY_01 &nbsp;·&nbsp; The Abaca Group Supply Chain
+<div class="print-footer">
+  <span>SC_PDF STORES SUMMARY_01 · The Abaca Group Supply Chain</span>
+  <span>Undelivered Report · {delivery_date}</span>
 </div>
 
-<button onclick="window.print()" style="margin-top:14px; padding:8px 20px;
-  font-size:11pt; cursor:pointer; background:#444; color:white; border:none; border-radius:4px;">
-  🖨 Print
-</button>
-
+<button class="print-btn" onclick="window.print()">🖨&nbsp; Print</button>
 </body>
 </html>"""
 
