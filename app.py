@@ -3,6 +3,7 @@ import pdfplumber
 import pandas as pd
 import re
 import io
+import json
 from pathlib import Path
 import plotly.graph_objects as go
 
@@ -209,9 +210,14 @@ def parse_pdf(pdf_bytes: bytes, filename: str) -> pd.DataFrame:
             for page_num, page in enumerate(pdf.pages):
                 text = page.extract_text() or ""
                 if page_num == 0:
-                    extracted = extract_store_name(text)
-                    if extracted and extracted != "UNKNOWN":
-                        store_name = extracted
+                    # Use filename (stem) as the store name — it's set by staff and is reliable.
+                    # Only fall back to text extraction if filename is purely numeric/generic.
+                    if not re.match(r'^\d+$', store_name):
+                        pass  # keep filename as store name
+                    else:
+                        extracted = extract_store_name(text)
+                        if extracted and extracted != "UNKNOWN":
+                            store_name = extracted
                     order_date    = extract_date(text, "ORDER DATE")
                     delivery_date = extract_date(text, "DELIVERY DATE")
 
@@ -738,10 +744,61 @@ with st.sidebar:
                 )
 
         st.markdown("---")
+
+        # ── Save Session ────────────────────────────────────────────────────
+        session_data = {
+            'df': st.session_state.df.to_dict('records'),
+            'file_names': list(st.session_state.file_names),
+            'undelivered_rows': st.session_state.undelivered_rows,
+        }
+        session_json = json.dumps(session_data, default=str)
+        st.download_button(
+            "💾  Save Session",
+            data=session_json,
+            file_name="orders_session.json",
+            mime="application/json",
+            use_container_width=True,
+            help="Download a snapshot you can reload later — even after restart"
+        )
+
+        st.markdown("---")
         if st.button("🗑  Clear & Reset"):
-            st.session_state.df         = pd.DataFrame()
-            st.session_state.file_names = set()
+            st.session_state.df              = pd.DataFrame()
+            st.session_state.file_names      = set()
+            st.session_state.undelivered_rows = []
             st.rerun()
+
+    # ── Load Saved Session ───────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown(
+        f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
+        f'text-transform:uppercase; color:{MUTED}; margin-bottom:6px;">Restore session</div>',
+        unsafe_allow_html=True
+    )
+    if 'session_loaded_key' not in st.session_state:
+        st.session_state.session_loaded_key = None
+    loaded_session = st.file_uploader(
+        "Load saved session (.json)",
+        type="json",
+        key="session_loader",
+        label_visibility="collapsed"
+    )
+    if loaded_session and loaded_session.name != st.session_state.session_loaded_key:
+        try:
+            data = json.loads(loaded_session.read())
+            df_restored = pd.DataFrame(data.get('df', []))
+            if not df_restored.empty:
+                for col_name in ['Order Qty', 'Total Amount', 'Days to Last']:
+                    if col_name in df_restored.columns:
+                        df_restored[col_name] = clean_numeric(df_restored[col_name])
+            st.session_state.df               = df_restored
+            st.session_state.file_names       = set(data.get('file_names', []))
+            st.session_state.undelivered_rows = data.get('undelivered_rows', [])
+            st.session_state.session_loaded_key = loaded_session.name
+            st.success("✅ Session restored!")
+            st.rerun()
+        except Exception as e:
+            st.error(f"Could not load session: {e}")
 
 
 # ─── HEADER ─────────────────────────────────────────────────────────────────────
