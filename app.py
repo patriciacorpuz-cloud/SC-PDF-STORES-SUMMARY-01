@@ -1256,7 +1256,7 @@ def _generate_combined_pdf(
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 10, "No items to report.", new_x="LMARGIN", new_y="NEXT", align="C")
 
-    return pdf.output()
+    return bytes(pdf.output())
 
 
 # ─── SESSION STATE ───────────────────────────────────────────────────────────────
