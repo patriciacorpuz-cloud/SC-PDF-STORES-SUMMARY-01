@@ -2013,21 +2013,34 @@ def _fetch_master_stores() -> dict[str, list[str]]:
         return {}
 
 
+def _normalize_store(name: str) -> str:
+    """Strip type codes like -(CS), -(F), -(B) from master list names for matching.
+    'ABC-(CS) CYBER' → 'ABC-CYBER', 'ABC-(F) TGU' → 'ABC-TGU'.
+    Also normalizes whitespace and uppercases. PDF-parsed names pass through unchanged
+    (they already lack the type code).
+    """
+    n = name.upper().strip()
+    # Remove -(XX) or -(X) type codes: pattern like "-(CS) " or "-(F) "
+    n = re.sub(r'-\([A-Z]+\)\s*', '-', n)
+    # Collapse any double dashes from removal
+    n = re.sub(r'-{2,}', '-', n)
+    # Normalize multiple spaces
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+
 def _check_bar_kitchen(store: str, loaded_stores: set[str]) -> tuple[bool, bool]:
     """Check if BAR and KITCHEN PDFs exist for a given master store name.
-    Matches '[STORE]-BAR', '[STORE] BAR', '[STORE]-KITCHEN', '[STORE] KITCHEN'
-    (case-insensitive) against the set of parsed store names.
+    Normalizes both sides (strips type codes) before comparing.
     """
-    store_upper = store.upper()
+    norm = _normalize_store(store)
     bar_found = False
     kitchen_found = False
     for ls in loaded_stores:
-        ls_upper = ls.upper()
-        # BAR match: "STORE-BAR" or "STORE BAR"
-        if ls_upper == f"{store_upper}-BAR" or ls_upper == f"{store_upper} BAR":
+        ls_norm = _normalize_store(ls)
+        if ls_norm == f"{norm}-BAR" or ls_norm == f"{norm} BAR":
             bar_found = True
-        # KITCHEN match: "STORE-KITCHEN" or "STORE KITCHEN"
-        if ls_upper == f"{store_upper}-KITCHEN" or ls_upper == f"{store_upper} KITCHEN":
+        if ls_norm == f"{norm}-KITCHEN" or ls_norm == f"{norm} KITCHEN":
             kitchen_found = True
         if bar_found and kitchen_found:
             break
@@ -2041,9 +2054,10 @@ def _is_rn1_store(store: str) -> bool:
 
 def _check_rn1_submitted(store: str, loaded_stores: set[str]) -> bool:
     """For RN1 stores, check if any PDF matching the store name was parsed."""
-    store_upper = store.upper()
+    norm = _normalize_store(store)
     for ls in loaded_stores:
-        if ls.upper() == store_upper or ls.upper().startswith(store_upper):
+        ls_norm = _normalize_store(ls)
+        if ls_norm == norm or ls_norm.startswith(norm):
             return True
     return False
 
@@ -2132,19 +2146,21 @@ def _compute_checklist_summary(groups: dict[str, list[str]], loaded_stores: set[
 
 
 def _all_expected_pdf_names(groups: dict[str, list[str]]) -> set[str]:
-    """Build a set of all expected parsed store names (uppercase) for unrecognized-store detection.
+    """Build a set of all expected *normalized* store names for unrecognized-store detection.
     Non-RN1 stores expect STORE-BAR and STORE-KITCHEN; RN1 stores expect the store name itself.
+    Uses normalized names (type codes stripped) so parsed PDF names match.
     """
     expected = set()
     for stores in groups.values():
         for store in stores:
+            norm = _normalize_store(store)
             if _is_rn1_store(store):
-                expected.add(store.upper())
+                expected.add(norm)
             else:
-                expected.add(f"{store.upper()}-BAR")
-                expected.add(f"{store.upper()} BAR")
-                expected.add(f"{store.upper()}-KITCHEN")
-                expected.add(f"{store.upper()} KITCHEN")
+                expected.add(f"{norm}-BAR")
+                expected.add(f"{norm} BAR")
+                expected.add(f"{norm}-KITCHEN")
+                expected.add(f"{norm} KITCHEN")
     return expected
 
 
@@ -2253,7 +2269,7 @@ with tab7:
         expected_names = _all_expected_pdf_names(groups)
         unrecognized = sorted(
             s for s in loaded_stores
-            if s.upper() not in expected_names
+            if _normalize_store(s) not in expected_names
         )
         if unrecognized:
             st.markdown("---")
