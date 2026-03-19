@@ -201,24 +201,56 @@ GRID_STYLE = dict(gridcolor=BORDER, zerolinecolor=BORDER)
 # ─── PDF PARSING ────────────────────────────────────────────────────────────────
 
 def clean_store_name(raw_name: str) -> str:
-    """P1-E/I: Strip date suffix and OS duplicate markers from filename-based store names.
-    Handles: ' - 03_15_26', ' - 03_21_26 (1)', ' - 03_21_26 (1) (1)', trailing ' (CS 2)', ' (FS)'.
+    """P1-E/I: Strip date suffix, OS duplicate markers, and SYS_OPS prefix from filenames.
+    Handles: ' - 03_15_26', ' - 03_21_26 (1)', trailing ' (CS 2)', ' (FS)', SYS_OPS_ prefix.
     """
     n = raw_name.strip()
+
+    # Handle SYS_OPS_ filenames:
+    # SYS_OPS_ABC-BLOC_2025_03_2.26 - PICK LIST-BAR - 2026-03-19T013558.224
+    # → ABC-BLOC-BAR
+    if n.upper().startswith('SYS_OPS_'):
+        n = n[8:]  # strip SYS_OPS_
+        # Extract store name (before _YYYY_ date pattern)
+        m = re.match(r'([A-Za-z0-9\-]+?)_\d{4}_', n)
+        if m:
+            store_part = m.group(1)
+        else:
+            store_part = n.split('_')[0]
+        # Determine BAR/KITCHEN from "PICK LIST-BAR" or "PICK LIST-KITCHEN"
+        upper = n.upper()
+        if 'ADDITIONAL ORDER' in upper:
+            return f"{store_part}-ADDITIONAL ORDER"
+        elif 'PICK LIST-KITCHEN' in upper or 'PICKLIST-KITCHEN' in upper:
+            return f"{store_part}-KITCHEN"
+        elif 'PICK LIST-BAR' in upper or 'PICKLIST-BAR' in upper:
+            return f"{store_part}-BAR"
+        else:
+            return store_part
+
+    # Standard filenames
     # Strip date suffix and everything after it: ' - MM_DD_YY...'
     n = re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}.*$', '', n).strip()
     # Strip trailing parenthetical suffixes like (CS 2), (CS 1), (FS), (F), (1)
-    # These come from OS duplicate markers or PDF naming conventions
     n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n, flags=re.IGNORECASE).strip()
-    # Run again in case there were nested suffixes like "(1) (1)" or "(CS 2)" after date strip
     n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n, flags=re.IGNORECASE).strip()
     return n
 
 
+# Alias map: PDF store base names that don't match master list directly.
+# Maps normalized PDF base (without -BAR/-KITCHEN) → normalized master base.
+_STORE_ALIAS_MAP = {
+    "TCS-MAHI": "ABC-MAHI",
+    "TCS-MANDANI": "ABC-MANDANI",
+    "TCS MAHI": "ABC-MAHI",
+    "TCS MANDANI": "ABC-MANDANI",
+}
+
+
 def _normalize_store(name: str) -> str:
     """Normalize a store name for matching between master list and parsed PDFs.
-    Strips: type codes -(CS)/(F), trailing suffixes (CS 2)/(FS)/(1), date remnants.
-    'ABC-(CS) CYBER' → 'ABC-CYBER', 'ABC-(F) TGU-BAR (FS)' → 'ABC-TGU-BAR'.
+    Strips: type codes -(CS)/(F), trailing suffixes (CS 2)/(FS)/(1), date remnants,
+    trailing FS/CS labels from master list names. Applies alias mapping.
     """
     n = name.upper().strip()
     # Strip date suffix and everything after: ' - MM_DD_YY...'
@@ -228,9 +260,26 @@ def _normalize_store(name: str) -> str:
     n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
     # Remove -(XX) type codes from master list names: "-(CS) " or "-(F) "
     n = re.sub(r'-\([A-Z]+\)\s*', '-', n)
+    # Strip trailing standalone FS or CS label (e.g. "TCS MAHI FS" → "TCS MAHI")
+    n = re.sub(r'\s+(?:FS|CS)\s*$', '', n).strip()
     # Collapse double dashes and normalize whitespace
     n = re.sub(r'-{2,}', '-', n)
     n = re.sub(r'\s+', ' ', n).strip()
+
+    # Apply alias mapping: check if base name (without -BAR/-KITCHEN) has an alias
+    # Extract base and suffix
+    suffix = ''
+    for suf in ('-BAR', '-KITCHEN', ' BAR', ' KITCHEN', '-ADDITIONAL ORDER'):
+        if n.endswith(suf):
+            suffix = suf
+            n = n[:-len(suf)]
+            break
+    # Check alias
+    if n in _STORE_ALIAS_MAP:
+        n = _STORE_ALIAS_MAP[n]
+    # Reattach suffix
+    n = n + suffix
+
     return n
 
 
