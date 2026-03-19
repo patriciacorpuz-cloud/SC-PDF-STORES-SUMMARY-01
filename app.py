@@ -1083,6 +1083,23 @@ def _generate_combined_pdf(
     """
     from fpdf import FPDF
 
+    def _safe(text: str) -> str:
+        """Sanitize text for fpdf2's built-in fonts (latin-1 only).
+        Replace common Unicode chars with ASCII equivalents.
+        """
+        replacements = {
+            '\u2014': '-', '\u2013': '-',  # em/en dash
+            '\u2018': "'", '\u2019': "'",  # smart quotes
+            '\u201c': '"', '\u201d': '"',
+            '\u2026': '...', '\u00a0': ' ',
+            '\u2022': '*', '\u00b7': '*',
+            '\u2019': "'",
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        # Drop any remaining non-latin1 chars
+        return text.encode('latin-1', errors='replace').decode('latin-1')
+
     class ReportPDF(FPDF):
         def header(self):
             # Logo if available
@@ -1092,11 +1109,11 @@ def _generate_combined_pdf(
                 except Exception:
                     pass
             self.set_font("Helvetica", "B", 14)
-            self.cell(0, 8, report_title, new_x="LMARGIN", new_y="NEXT", align="R")
+            self.cell(0, 8, _safe(report_title), new_x="LMARGIN", new_y="NEXT", align="R")
             self.set_font("Helvetica", "", 8)
             self.set_text_color(100, 100, 100)
             meta = f"Order Date: {order_date}   |   Delivery Date: {delivery_date}   |   Prepared By: {prepared_by.upper()}"
-            self.cell(0, 5, meta, new_x="LMARGIN", new_y="NEXT", align="R")
+            self.cell(0, 5, _safe(meta), new_x="LMARGIN", new_y="NEXT", align="R")
             self.set_text_color(0, 0, 0)
             # Gold rule
             self.set_draw_color(201, 169, 110)
@@ -1137,13 +1154,13 @@ def _generate_combined_pdf(
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_fill_color(240, 235, 226)
             pdf.set_draw_color(201, 169, 110)
-            pdf.cell(0, 7, f"  {item_name}", new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
+            pdf.cell(0, 7, _safe(f"  {item_name}"), new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
             pdf.set_draw_color(0, 0, 0)
 
             if remarks:
                 pdf.set_font("Helvetica", "I", 8)
                 pdf.set_text_color(122, 92, 30)
-                pdf.cell(0, 5, f"  Remarks: {remarks}", new_x="LMARGIN", new_y="NEXT")
+                pdf.cell(0, 5, _safe(f"  Remarks: {remarks}"), new_x="LMARGIN", new_y="NEXT")
                 pdf.set_text_color(0, 0, 0)
 
             # Table header
@@ -1162,7 +1179,7 @@ def _generate_combined_pdf(
                     pdf.add_page()
                     # Re-draw item context on new page
                     pdf.set_font("Helvetica", "B", 9)
-                    pdf.cell(0, 6, f"  {item_name} (continued)", new_x="LMARGIN", new_y="NEXT")
+                    pdf.cell(0, 6, _safe(f"  {item_name} (continued)"), new_x="LMARGIN", new_y="NEXT")
                     pdf.set_font("Helvetica", "B", 8)
                     pdf.set_fill_color(240, 240, 240)
                     for i, h in enumerate(headers):
@@ -1170,9 +1187,9 @@ def _generate_combined_pdf(
                     pdf.ln()
                     pdf.set_font("Helvetica", "", 8)
 
-                pdf.cell(col_w[0], 5.5, f"  {s.get('store', '')}", border=1)
+                pdf.cell(col_w[0], 5.5, _safe(f"  {s.get('store', '')}"), border=1)
                 pdf.cell(col_w[1], 5.5, str(s.get("qty", "")), border=1, align="C")
-                pdf.cell(col_w[2], 5.5, s.get("uom", ""), border=1, align="C")
+                pdf.cell(col_w[2], 5.5, _safe(s.get("uom", "")), border=1, align="C")
                 pdf.ln()
 
             pdf.ln(4)
@@ -1205,13 +1222,13 @@ def _generate_combined_pdf(
             pdf.set_font("Helvetica", "B", 10)
             pdf.set_fill_color(240, 235, 226)
             pdf.set_draw_color(201, 169, 110)
-            pdf.cell(0, 7, f"  {item_name}", new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
+            pdf.cell(0, 7, _safe(f"  {item_name}"), new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
             pdf.set_draw_color(0, 0, 0)
 
             if item_name in mo_remarks:
                 pdf.set_font("Helvetica", "I", 8)
                 pdf.set_text_color(122, 92, 30)
-                pdf.cell(0, 5, f"  Remarks: {mo_remarks[item_name]}", new_x="LMARGIN", new_y="NEXT")
+                pdf.cell(0, 5, _safe(f"  Remarks: {mo_remarks[item_name]}"), new_x="LMARGIN", new_y="NEXT")
                 pdf.set_text_color(0, 0, 0)
 
             # Table
@@ -1227,9 +1244,9 @@ def _generate_combined_pdf(
             for e in entries:
                 if pdf.get_y() > 270:
                     pdf.add_page()
-                pdf.cell(col_w[0], 5.5, f"  {e.get('store', '')}", border=1)
+                pdf.cell(col_w[0], 5.5, _safe(f"  {e.get('store', '')}"), border=1)
                 pdf.cell(col_w[1], 5.5, str(e.get("qty", "")), border=1, align="C")
-                pdf.cell(col_w[2], 5.5, e.get("uom", ""), border=1, align="C")
+                pdf.cell(col_w[2], 5.5, _safe(e.get("uom", "")), border=1, align="C")
                 pdf.ln()
 
             pdf.ln(4)
