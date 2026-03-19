@@ -940,95 +940,25 @@ def _parse_drive_link(url: str) -> tuple[str, str]:
     return 'unknown', ''
 
 
-def _drive_download_file(file_id: str, session: 'requests.Session') -> tuple[str, bytes] | None:
-    """Download a single file from Google Drive using the public export URL.
-    Handles the large-file confirmation page automatically.
-    Returns (filename, bytes) or None on failure.
-    """
-    import requests
+def _get_drive_service():
+    """Build a Google Drive API service using the same service account from Streamlit secrets."""
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
 
-    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
-    resp = session.get(download_url, stream=True, timeout=60)
-
-    # Google may serve a confirmation page for large files (virus scan warning).
-    # The confirm token is in a cookie or in the page HTML.
-    if b'confirm=' in resp.content[:2000] or resp.headers.get('Content-Type', '').startswith('text/html'):
-        # Extract confirm token from cookies
-        confirm_token = None
-        for k, v in session.cookies.items():
-            if 'download_warning' in k or 'NID' in k:
-                confirm_token = v
-                break
-        if not confirm_token:
-            # Try to extract from HTML response
-            m = re.search(r'confirm=([0-9A-Za-z_-]+)', resp.text)
-            if m:
-                confirm_token = m.group(1)
-        if confirm_token:
-            resp = session.get(
-                download_url + f"&confirm={confirm_token}",
-                stream=True, timeout=60,
-            )
-
-    # Extract filename from content-disposition header
-    cd = resp.headers.get('Content-Disposition', '')
-    fname_match = re.search(r'filename\*?=["\']?(?:UTF-8\'\')?([^"\';\r\n]+)', cd)
-    if fname_match:
-        from urllib.parse import unquote
-        fname = unquote(fname_match.group(1)).strip()
-    else:
-        fname = f"drive_{file_id[:8]}.pdf"
-
-    content = resp.content
-
-    # Verify it's actually a PDF (not an HTML error page)
-    if not content[:5].startswith(b'%PDF'):
-        return None
-
-    return (fname, content)
-
-
-def _drive_list_folder_files(folder_id: str) -> list[dict]:
-    """List PDF files in a public Google Drive folder by scraping the folder page.
-    Returns list of dicts with 'id' and 'name' keys.
-    """
-    import requests
-
-    # Approach 1: Scrape the public folder page for file IDs and names
-    folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    resp = requests.get(folder_url, headers=headers, timeout=30)
-
-    if resp.status_code == 404:
-        return []
-    if resp.status_code != 200:
-        return []
-
-    html = resp.text
-
-    # Google Drive folder pages embed file data in JavaScript.
-    # File IDs appear as /file/d/FILE_ID/ patterns, and names appear nearby.
-    # Extract all unique file IDs from the page.
-    file_ids = re.findall(r'/file/d/([A-Za-z0-9_-]{20,})', html)
-    file_ids = list(dict.fromkeys(file_ids))  # deduplicate preserving order
-
-    if not file_ids:
-        # Fallback: try extracting IDs from data attributes or JS arrays
-        file_ids = re.findall(r'\["([A-Za-z0-9_-]{28,})"', html)
-        # Filter to likely file IDs (not folder IDs which we already have)
-        file_ids = [fid for fid in dict.fromkeys(file_ids) if fid != folder_id]
-
-    # We don't reliably get filenames from scraping, so we'll get them during download
-    return [{"id": fid, "name": ""} for fid in file_ids]
+    scopes = ["https://www.googleapis.com/auth/drive.readonly"]
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scopes,
+    )
+    return build("drive", "v3", credentials=creds)
 
 
 def _download_from_drive(url: str) -> list[tuple[str, bytes]]:
     """Download PDFs from a Google Drive link (folder or single file).
-    Uses direct HTTP requests (no gdown) for reliability with public links.
+    Uses the Google Drive API via the same service account used for the Store Checklist.
+    The Drive folder/file must be shared with the service account email.
     Returns list of (filename, bytes) tuples.
     """
-    import requests
-
     link_type, drive_id = _parse_drive_link(url)
 
     if link_type == 'unknown' or not drive_id:
@@ -1039,90 +969,130 @@ def _download_from_drive(url: str) -> list[tuple[str, bytes]]:
         )
         return []
 
-    session = requests.Session()
-    session.headers.update({"User-Agent": "Mozilla/5.0"})
+    try:
+        service = _get_drive_service()
+    except KeyError:
+        st.error(
+            "**Service account credentials not found.** "
+            "Add `[gcp_service_account]` to Streamlit secrets."
+        )
+        return []
+    except Exception as e:
+        st.error(f"**Could not connect to Google Drive API:** {e}")
+        return []
+
     results = []  # (name, bytes)
 
     if link_type == 'folder':
         status = st.empty()
         status.info("Scanning Google Drive folder for PDF files…")
 
-        file_list = _drive_list_folder_files(drive_id)
-
-        if not file_list:
+        try:
+            # List all PDF files in the folder using Drive API
+            query = f"'{drive_id}' in parents and mimeType='application/pdf' and trashed=false"
+            file_list = []
+            page_token = None
+            while True:
+                resp = service.files().list(
+                    q=query,
+                    fields="nextPageToken, files(id, name, size)",
+                    pageSize=100,
+                    pageToken=page_token,
+                ).execute()
+                file_list.extend(resp.get("files", []))
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+        except Exception as e:
             status.empty()
-            st.error(
-                "**No files found in folder.** Possible causes:\n"
-                "- Folder is not shared as **Anyone with the link can view**\n"
-                "- Folder is empty\n"
-                "- Google is blocking automated access (try again in a few seconds)"
-            )
+            err_msg = str(e)
+            if "404" in err_msg:
+                st.error("**Folder not found.** Check the link is correct.")
+            elif "403" in err_msg or "access" in err_msg.lower():
+                # Show the service account email so user can share with it
+                sa_email = st.secrets.get("gcp_service_account", {}).get("client_email", "")
+                st.error(
+                    f"**Access denied.** Share the Drive folder with the service account:\n\n"
+                    f"`{sa_email}`\n\n"
+                    f"Set permission to **Viewer**."
+                )
+            else:
+                st.error(f"**Drive API error:** {e}")
             return []
 
         status.empty()
-        st.info(f"Found **{len(file_list)} file(s)** in folder — downloading PDFs…")
 
+        if not file_list:
+            sa_email = st.secrets.get("gcp_service_account", {}).get("client_email", "")
+            st.error(
+                f"**No PDF files found in folder.** Possible causes:\n"
+                f"- Folder is empty or has no PDFs\n"
+                f"- Folder is not shared with the service account\n\n"
+                f"Share the folder with:\n`{sa_email}`"
+            )
+            return []
+
+        st.info(f"Found **{len(file_list)} PDF(s)** in folder — downloading…")
         progress = st.progress(0, text=f"Downloading 0 of {len(file_list)} files…")
-        skipped = 0
 
         for i, f_info in enumerate(file_list):
+            fname = f_info.get("name", f"file_{i}.pdf")
             progress.progress(
                 (i + 1) / len(file_list),
-                text=f"Downloading {i + 1} of {len(file_list)} files…"
+                text=f"Downloading {i + 1} of {len(file_list)} files… ({fname})"
             )
             try:
-                result = _drive_download_file(f_info["id"], session)
-                if result:
-                    fname, fbytes = result
-                    # Only keep PDFs
-                    if fname.lower().endswith('.pdf') or fbytes[:5].startswith(b'%PDF'):
-                        if not fname.lower().endswith('.pdf'):
-                            fname += '.pdf'
-                        results.append((fname, fbytes))
-                    else:
-                        skipped += 1
+                content = service.files().get_media(fileId=f_info["id"]).execute()
+                if content and content[:5].startswith(b'%PDF'):
+                    results.append((fname, content))
                 else:
-                    skipped += 1
+                    st.warning(f"Skipped **{fname}** — not a valid PDF")
             except Exception as e:
-                st.warning(f"Failed to download file `{f_info['id'][:12]}…`: {e}")
+                st.warning(f"Failed to download **{fname}**: {e}")
 
         progress.empty()
 
         if results:
-            msg = f"✓ Downloaded **{len(results)} PDF(s)** — parsing now…"
-            if skipped:
-                msg += f"  ({skipped} non-PDF file(s) skipped)"
-            st.success(msg)
+            st.success(f"✓ Downloaded **{len(results)} PDF(s)** — parsing now…")
         else:
-            st.error(
-                "**No PDFs could be downloaded.** Make sure the folder contains PDF files "
-                "and sharing is set to **Anyone with the link can view**."
-            )
+            st.error("**No PDFs could be downloaded** from the folder.")
 
     else:
-        # Single file download
+        # Single file download via Drive API
         status = st.empty()
         status.info("Downloading file from Google Drive…")
 
         try:
-            result = _drive_download_file(drive_id, session)
+            # Get file metadata (name)
+            meta = service.files().get(fileId=drive_id, fields="name, mimeType").execute()
+            fname = meta.get("name", f"drive_{drive_id[:8]}.pdf")
+
+            # Download content
+            content = service.files().get_media(fileId=drive_id).execute()
         except Exception as e:
             status.empty()
-            st.error(f"**Download failed:** {e}")
+            err_msg = str(e)
+            if "404" in err_msg:
+                st.error("**File not found.** Check the link is correct.")
+            elif "403" in err_msg or "access" in err_msg.lower():
+                sa_email = st.secrets.get("gcp_service_account", {}).get("client_email", "")
+                st.error(
+                    f"**Access denied.** Share the file with the service account:\n\n"
+                    f"`{sa_email}`\n\n"
+                    f"Set permission to **Viewer**."
+                )
+            else:
+                st.error(f"**Download failed:** {e}")
             return []
         status.empty()
 
-        if not result:
-            st.error(
-                "**Download failed** — the file may not be a PDF or is not accessible. "
-                "Make sure sharing is set to **Anyone with the link can view**."
-            )
+        if not content or not content[:5].startswith(b'%PDF'):
+            st.error("**Downloaded file is not a valid PDF.**")
             return []
 
-        fname, fbytes = result
         if not fname.lower().endswith('.pdf'):
             fname += '.pdf'
-        results.append((fname, fbytes))
+        results.append((fname, content))
         st.success(f"✓ Downloaded **1 PDF** ({fname}) — parsing now…")
 
     return results
@@ -1421,7 +1391,7 @@ with st.sidebar:
     )
     st.markdown(
         f'<div style="font-size:0.62rem; color:{MUTED}; margin-top:-8px; margin-bottom:8px;">'
-        f'PDFs must be shared as <b>Anyone with the link can view</b> from your personal Google Drive</div>',
+        f'Share the Drive folder with the service account email (see Store Checklist tab for details)</div>',
         unsafe_allow_html=True,
     )
     load_drive = st.button("📥  Load from Drive", use_container_width=True, key="load_drive_btn")
