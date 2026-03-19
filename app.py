@@ -1068,6 +1068,180 @@ def _download_from_drive(url: str) -> list[tuple[str, bytes]]:
     return results
 
 
+# ─── PDF REPORT GENERATION (fpdf2) ────────────────────────────────────────────
+
+def _generate_combined_pdf(
+    unavailable_items: list[dict],
+    manual_orders: list[dict],
+    report_title: str,
+    order_date: str,
+    delivery_date: str,
+    prepared_by: str,
+) -> bytes:
+    """Generate a print-ready PDF combining unavailable items and manual orders.
+    Uses fpdf2. Returns PDF bytes.
+    """
+    from fpdf import FPDF
+
+    class ReportPDF(FPDF):
+        def header(self):
+            # Logo if available
+            if _LOGO_PATH.exists():
+                try:
+                    self.image(str(_LOGO_PATH), 10, 8, 25)
+                except Exception:
+                    pass
+            self.set_font("Helvetica", "B", 14)
+            self.cell(0, 8, report_title, new_x="LMARGIN", new_y="NEXT", align="R")
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(100, 100, 100)
+            meta = f"Order Date: {order_date}   |   Delivery Date: {delivery_date}   |   Prepared By: {prepared_by.upper()}"
+            self.cell(0, 5, meta, new_x="LMARGIN", new_y="NEXT", align="R")
+            self.set_text_color(0, 0, 0)
+            # Gold rule
+            self.set_draw_color(201, 169, 110)
+            self.set_line_width(0.8)
+            self.line(10, self.get_y() + 2, 200, self.get_y() + 2)
+            self.ln(6)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font("Helvetica", "I", 7)
+            self.set_text_color(160, 160, 160)
+            self.cell(0, 10, f"SC_PDF STORES SUMMARY · The Abaca Group · Page {self.page_no()}/{{nb}}", align="C")
+
+    pdf = ReportPDF(orientation="P", unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+
+    # ── Section 1: Unavailable Items ──────────────────────────────────────────
+    if unavailable_items:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(26, 26, 26)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 8, "  ITEMS NOT AVAILABLE TODAY", new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
+        for entry in unavailable_items:
+            item_name = entry.get("item", "")
+            remarks = entry.get("remarks", "")
+            stores = entry.get("stores", [])
+
+            # Check if we need a new page (at least 30mm needed for item header + a few rows)
+            if pdf.get_y() > 250:
+                pdf.add_page()
+
+            # Item name header
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_fill_color(240, 235, 226)
+            pdf.set_draw_color(201, 169, 110)
+            pdf.cell(0, 7, f"  {item_name}", new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
+            pdf.set_draw_color(0, 0, 0)
+
+            if remarks:
+                pdf.set_font("Helvetica", "I", 8)
+                pdf.set_text_color(122, 92, 30)
+                pdf.cell(0, 5, f"  Remarks: {remarks}", new_x="LMARGIN", new_y="NEXT")
+                pdf.set_text_color(0, 0, 0)
+
+            # Table header
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(240, 240, 240)
+            col_w = [90, 30, 40]
+            headers = ["STORE", "QTY", "UOM"]
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 6, h, border=1, fill=True, align="C")
+            pdf.ln()
+
+            # Table rows
+            pdf.set_font("Helvetica", "", 8)
+            for s in stores:
+                if pdf.get_y() > 270:
+                    pdf.add_page()
+                    # Re-draw item context on new page
+                    pdf.set_font("Helvetica", "B", 9)
+                    pdf.cell(0, 6, f"  {item_name} (continued)", new_x="LMARGIN", new_y="NEXT")
+                    pdf.set_font("Helvetica", "B", 8)
+                    pdf.set_fill_color(240, 240, 240)
+                    for i, h in enumerate(headers):
+                        pdf.cell(col_w[i], 6, h, border=1, fill=True, align="C")
+                    pdf.ln()
+                    pdf.set_font("Helvetica", "", 8)
+
+                pdf.cell(col_w[0], 5.5, f"  {s.get('store', '')}", border=1)
+                pdf.cell(col_w[1], 5.5, str(s.get("qty", "")), border=1, align="C")
+                pdf.cell(col_w[2], 5.5, s.get("uom", ""), border=1, align="C")
+                pdf.ln()
+
+            pdf.ln(4)
+
+    # ── Section 2: Manual Orders ──────────────────────────────────────────────
+    if manual_orders:
+        if pdf.get_y() > 240:
+            pdf.add_page()
+
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(26, 26, 26)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 8, "  MANUAL ORDERS", new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
+        # Group manual orders by item
+        from collections import defaultdict
+        mo_grouped = defaultdict(list)
+        mo_remarks = {}
+        for mo in manual_orders:
+            mo_grouped[mo["item"]].append(mo)
+            if mo.get("remarks"):
+                mo_remarks[mo["item"]] = mo["remarks"]
+
+        for item_name, entries in mo_grouped.items():
+            if pdf.get_y() > 250:
+                pdf.add_page()
+
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_fill_color(240, 235, 226)
+            pdf.set_draw_color(201, 169, 110)
+            pdf.cell(0, 7, f"  {item_name}", new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
+            pdf.set_draw_color(0, 0, 0)
+
+            if item_name in mo_remarks:
+                pdf.set_font("Helvetica", "I", 8)
+                pdf.set_text_color(122, 92, 30)
+                pdf.cell(0, 5, f"  Remarks: {mo_remarks[item_name]}", new_x="LMARGIN", new_y="NEXT")
+                pdf.set_text_color(0, 0, 0)
+
+            # Table
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(240, 240, 240)
+            col_w = [90, 30, 40]
+            headers = ["STORE", "QTY", "UOM"]
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 6, h, border=1, fill=True, align="C")
+            pdf.ln()
+
+            pdf.set_font("Helvetica", "", 8)
+            for e in entries:
+                if pdf.get_y() > 270:
+                    pdf.add_page()
+                pdf.cell(col_w[0], 5.5, f"  {e.get('store', '')}", border=1)
+                pdf.cell(col_w[1], 5.5, str(e.get("qty", "")), border=1, align="C")
+                pdf.cell(col_w[2], 5.5, e.get("uom", ""), border=1, align="C")
+                pdf.ln()
+
+            pdf.ln(4)
+
+    # If both empty, show a message
+    if not unavailable_items and not manual_orders:
+        pdf.set_font("Helvetica", "", 10)
+        pdf.cell(0, 10, "No items to report.", new_x="LMARGIN", new_y="NEXT", align="C")
+
+    return pdf.output()
+
+
 # ─── SESSION STATE ───────────────────────────────────────────────────────────────
 if 'df' not in st.session_state:
     st.session_state.df              = pd.DataFrame()
@@ -1076,6 +1250,10 @@ if 'undelivered_rows' not in st.session_state:
     st.session_state.undelivered_rows = []   # list of dicts
 if 'parse_warnings' not in st.session_state:
     st.session_state.parse_warnings  = []    # P2-J: Parsing warning log
+if 'unavailable_items' not in st.session_state:
+    st.session_state.unavailable_items = []  # list of dicts: {item, remarks, stores: [{store, qty, uom}]}
+if 'manual_orders' not in st.session_state:
+    st.session_state.manual_orders = []      # list of dicts: {store, item, qty, uom, remarks}
 
 
 # ─── SIDEBAR ────────────────────────────────────────────────────────────────────
@@ -1248,6 +1426,8 @@ with st.sidebar:
             'file_names': list(st.session_state.file_names),
             'undelivered_rows': st.session_state.undelivered_rows,
             'parse_warnings': st.session_state.parse_warnings,
+            'unavailable_items': st.session_state.unavailable_items,
+            'manual_orders': st.session_state.manual_orders,
         }
         session_json = json.dumps(session_data, default=str)
         st.download_button(
@@ -1261,10 +1441,12 @@ with st.sidebar:
 
         st.markdown("---")
         if st.button("🗑  Clear & Reset"):
-            st.session_state.df              = pd.DataFrame()
-            st.session_state.file_names      = set()
+            st.session_state.df               = pd.DataFrame()
+            st.session_state.file_names       = set()
             st.session_state.undelivered_rows = []
-            st.session_state.parse_warnings  = []
+            st.session_state.parse_warnings   = []
+            st.session_state.unavailable_items = []
+            st.session_state.manual_orders    = []
             st.rerun()
 
     # ── Load Saved Session ───────────────────────────────────────────────────
@@ -1292,8 +1474,10 @@ with st.sidebar:
                         df_restored[col_name] = clean_numeric(df_restored[col_name])
             st.session_state.df               = df_restored
             st.session_state.file_names       = set(data.get('file_names', []))
-            st.session_state.undelivered_rows = data.get('undelivered_rows', [])
-            st.session_state.parse_warnings   = data.get('parse_warnings', [])
+            st.session_state.undelivered_rows  = data.get('undelivered_rows', [])
+            st.session_state.parse_warnings    = data.get('parse_warnings', [])
+            st.session_state.unavailable_items = data.get('unavailable_items', [])
+            st.session_state.manual_orders     = data.get('manual_orders', [])
             st.session_state.session_loaded_key = loaded_session.name
             st.success("✅ Session restored!")
             st.rerun()
@@ -1411,11 +1595,12 @@ st.markdown("---")
 
 
 # ─── TABS ────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab4, tab5, tab7 = st.tabs([
+tab1, tab2, tab4, tab5, tab6, tab7 = st.tabs([
     "  📋  PICK LIST  ",
     "  📦  ITEM ALLOCATION  ",
     "  📊  ALL ORDERS  ",
     "  🚫  UNDELIVERED REPORT  ",
+    "  📝  MANUAL ORDERS  ",
     "  ✅  STORE CHECKLIST  ",
 ])
 
@@ -1756,7 +1941,6 @@ with tab5:
             key="ud_title"
         )
     with rh2:
-        # Auto-fill from data if available
         auto_order_dates = sorted(filtered['Order Date'].dropna().unique()) if not filtered.empty else []
         auto_del_dates   = sorted(filtered['Delivery Date'].dropna().unique()) if not filtered.empty else []
         ud_order_date = st.text_input(
@@ -1775,8 +1959,8 @@ with tab5:
 
     st.markdown("---")
 
-    # ── Add Undelivered Item Form ────────────────────────────────────────────────
-    st.markdown(f'<div class="section-label">Add Undelivered Item</div>', unsafe_allow_html=True)
+    # ── Section 1: Original Undelivered Item Form (row-by-row) ────────────────
+    st.markdown(f'<div class="section-label">Add Undelivered Item (row-by-row)</div>', unsafe_allow_html=True)
 
     fa1, fa2 = st.columns([2, 3])
 
@@ -1789,7 +1973,6 @@ with tab5:
         )
 
     with fa2:
-        # Auto-load stores that ordered this item
         if sel_ud_item and sel_ud_item != "— select item —":
             stores_ordered = sorted(
                 filtered[filtered['Item Description'] == sel_ud_item]['Store']
@@ -1801,7 +1984,7 @@ with tab5:
         sel_ud_stores = st.multiselect(
             "Affected Stores",
             stores_ordered,
-            default=stores_ordered,   # pre-select ALL stores that ordered this item
+            default=stores_ordered,
             key="ud_stores_sel",
             help="Pre-selected stores that ordered this item — deselect any that DID receive it"
         )
@@ -1823,7 +2006,6 @@ with tab5:
         elif not sel_ud_stores:
             st.warning("Please select at least one store.")
         else:
-            # Look up qty per store from order data
             for store in sel_ud_stores:
                 mask = (
                     (filtered['Item Description'] == sel_ud_item) &
@@ -1860,7 +2042,6 @@ with tab5:
         st.markdown(f'<div class="section-label">Undelivered Items — {len(st.session_state.undelivered_rows)} rows</div>',
                     unsafe_allow_html=True)
 
-        # Editable preview table
         ud_df = pd.DataFrame(st.session_state.undelivered_rows)
         ud_df.columns = ['Item', 'Store', 'Qty', 'Remarks']
 
@@ -1878,13 +2059,11 @@ with tab5:
             key="ud_editor"
         )
 
-        # Sync edits back to session state
         if edited_df is not None:
             st.session_state.undelivered_rows = edited_df.rename(columns={
                 'Item': 'item', 'Store': 'store', 'Qty': 'qty', 'Remarks': 'remarks'
             }).to_dict('records')
 
-        # Action buttons
         bc1, bc2, bc3 = st.columns([2, 2, 3])
         with bc1:
             if st.button("🗑  Clear All Rows", key="ud_clear"):
@@ -1892,7 +2071,6 @@ with tab5:
                 st.rerun()
 
         with bc2:
-            # Generate + download report
             if st.session_state.undelivered_rows:
                 html_ud = make_undelivered_html(
                     rows          = st.session_state.undelivered_rows,
@@ -1903,7 +2081,7 @@ with tab5:
                 )
                 title_safe = re.sub(r'[^\w\s-]', '', report_title_input or "UNDELIVERED").replace(' ', '_')
                 st.download_button(
-                    label="🖨  Download Report (Print-Ready)",
+                    label="🖨  Download Report (HTML)",
                     data=html_ud.encode('utf-8'),
                     file_name=f"{title_safe}_{ud_del_date}.html",
                     mime="text/html",
@@ -1913,11 +2091,304 @@ with tab5:
         with bc3:
             st.markdown(
                 f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:8px;">'
-                'Download → open in browser → Ctrl+P to print &nbsp;·&nbsp; '
-                'You can also edit cells directly in the table above</div>',
+                'Download → open in browser → Ctrl+P to print</div>',
                 unsafe_allow_html=True
             )
 
+    st.markdown("---")
+
+    # ══════════════════════════════════════════════════════════════════════════════
+    # Section 2: ITEMS NOT AVAILABLE TODAY (grouped by item, auto-fills stores)
+    # ══════════════════════════════════════════════════════════════════════════════
+    st.markdown(f'<div class="section-label">Items Not Available Today</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:12px;">'
+        f'Select items that are unavailable — stores and quantities are auto-filled from PDF data. '
+        f'Use this to generate the Allocation Guide PDF.</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Item selector
+    na_c1, na_c2, na_c3 = st.columns([3, 3, 1])
+    with na_c1:
+        all_items_na = sorted(filtered['Item Description'].dropna().unique()) if not filtered.empty else []
+        sel_na_item = st.selectbox(
+            "Select unavailable item",
+            ["— select item —"] + all_items_na,
+            key="na_item_sel",
+        )
+    with na_c2:
+        na_remark = st.text_input(
+            "Remark for this item",
+            placeholder="e.g. AVAILABLE TOMORROW, OUT OF STOCK",
+            key="na_remark",
+        )
+    with na_c3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        na_add = st.button("➕  Add Item", key="na_add_btn", use_container_width=True)
+
+    if na_add:
+        if sel_na_item == "— select item —":
+            st.warning("Please select an item first.")
+        else:
+            # Check for duplicate
+            existing_items = {e["item"] for e in st.session_state.unavailable_items}
+            if sel_na_item in existing_items:
+                st.warning(f"**{sel_na_item}** is already in the list.")
+            else:
+                # Auto-fill stores + qty + UOM from parsed data
+                item_data = filtered[filtered['Item Description'] == sel_na_item]
+                store_rows = []
+                for store_name in sorted(item_data['Store'].dropna().unique()):
+                    store_mask = item_data['Store'] == store_name
+                    qty = item_data.loc[store_mask, 'Order Qty'].sum()
+                    qty = int(qty) if pd.notna(qty) and qty > 0 else 1
+                    uom_vals = item_data.loc[store_mask, 'UOM'].dropna().unique()
+                    uom = uom_vals[0] if len(uom_vals) > 0 else ""
+                    store_rows.append({"store": store_name, "qty": qty, "uom": uom})
+
+                st.session_state.unavailable_items.append({
+                    "item": sel_na_item,
+                    "remarks": na_remark.strip().upper() if na_remark else "",
+                    "stores": store_rows,
+                })
+                st.success(f"Added **{sel_na_item}** — {len(store_rows)} store(s) affected.")
+                st.rerun()
+
+    # Display current unavailable items list
+    if st.session_state.unavailable_items:
+        for idx, entry in enumerate(st.session_state.unavailable_items):
+            item_name = entry["item"]
+            remarks = entry.get("remarks", "")
+            stores = entry.get("stores", [])
+            total_qty = sum(s.get("qty", 0) for s in stores)
+
+            with st.expander(
+                f"**{item_name}** — {len(stores)} stores, {total_qty} units"
+                + (f"  ·  {remarks}" if remarks else ""),
+                expanded=False,
+            ):
+                if stores:
+                    st.dataframe(
+                        pd.DataFrame(stores).rename(columns={"store": "Store", "qty": "Qty", "uom": "UOM"}),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=min(250, 40 + len(stores) * 36),
+                    )
+                if st.button(f"🗑 Remove", key=f"na_remove_{idx}"):
+                    st.session_state.unavailable_items.pop(idx)
+                    st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Generate Allocation Guide PDF
+        na_bc1, na_bc2 = st.columns([2, 3])
+        with na_bc1:
+            if st.button("🗑  Clear All Unavailable Items", key="na_clear_all"):
+                st.session_state.unavailable_items = []
+                st.rerun()
+        with na_bc2:
+            pdf_bytes = _generate_combined_pdf(
+                unavailable_items=st.session_state.unavailable_items,
+                manual_orders=[],
+                report_title=report_title_input or "ALLOCATION GUIDE",
+                order_date=ud_order_date,
+                delivery_date=ud_del_date,
+                prepared_by=ud_prepared_by or "—",
+            )
+            title_safe = re.sub(r'[^\w\s-]', '', report_title_input or "ALLOCATION_GUIDE").replace(' ', '_')
+            st.download_button(
+                label="📄  Download Allocation Guide (PDF)",
+                data=pdf_bytes,
+                file_name=f"{title_safe}_ALLOCATION_{ud_del_date}.pdf",
+                mime="application/pdf",
+                key="na_download_pdf",
+            )
+    else:
+        st.markdown(f"""
+        <div style="padding:18px; text-align:center; color:{MUTED};
+                    border:1px dashed {BORDER}; border-radius:4px; margin-top:8px;">
+          <div style="font-size:0.72rem; letter-spacing:0.08em; text-transform:uppercase;">
+            No unavailable items added yet — select items above
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TAB 6 — MANUAL ORDERS
+# ══════════════════════════════════════════════════════════════════════════════════
+with tab6:
+    st.markdown(f"""
+    <div style="margin-bottom:16px;">
+      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+                  text-transform:uppercase; font-weight:600;">
+        Add orders that came in verbally or by hand — not in any uploaded PDF
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Add Manual Order Form ─────────────────────────────────────────────────
+    st.markdown(f'<div class="section-label">Add Manual Order</div>', unsafe_allow_html=True)
+
+    mo_c1, mo_c2, mo_c3, mo_c4 = st.columns([2, 3, 1, 1])
+    with mo_c1:
+        # Store dropdown from master list or parsed data
+        all_stores_mo = sorted(df['Store'].dropna().unique()) if not df.empty else []
+        mo_store = st.selectbox(
+            "Store",
+            ["— select store —"] + all_stores_mo,
+            key="mo_store_sel",
+        )
+    with mo_c2:
+        mo_item = st.text_input("Item Name", placeholder="e.g. CHICKEN BREAST", key="mo_item")
+    with mo_c3:
+        mo_qty = st.number_input("Qty", min_value=0, value=1, step=1, key="mo_qty")
+    with mo_c4:
+        mo_uom = st.text_input("UOM", placeholder="e.g. KG, PCS", key="mo_uom")
+
+    mo_r1, mo_r2 = st.columns([4, 1])
+    with mo_r1:
+        mo_remarks = st.text_input(
+            "Remarks",
+            placeholder="e.g. VERBAL ORDER FROM MANAGER, PHONE ORDER",
+            key="mo_remarks",
+        )
+    with mo_r2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        mo_add = st.button("➕  Add Order", key="mo_add_btn", use_container_width=True)
+
+    if mo_add:
+        if mo_store == "— select store —":
+            st.warning("Please select a store.")
+        elif not mo_item or not mo_item.strip():
+            st.warning("Please enter an item name.")
+        elif mo_qty <= 0:
+            st.warning("Qty must be greater than 0.")
+        else:
+            st.session_state.manual_orders.append({
+                "store": mo_store,
+                "item": mo_item.strip().upper(),
+                "qty": int(mo_qty),
+                "uom": mo_uom.strip().upper() if mo_uom else "",
+                "remarks": mo_remarks.strip().upper() if mo_remarks else "",
+            })
+            st.success(f"Added **{mo_item.strip().upper()}** × {int(mo_qty)} for **{mo_store}**.")
+            st.rerun()
+
+    st.markdown("---")
+
+    # ── Current Manual Orders List ────────────────────────────────────────────
+    if not st.session_state.manual_orders:
+        st.markdown(f"""
+        <div style="padding:24px; text-align:center; color:{MUTED};
+                    border:1px dashed {BORDER}; border-radius:4px;">
+          <div style="font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase;">
+            No manual orders added yet
+          </div>
+          <div style="font-size:0.72rem; margin-top:6px;">
+            Use the form above to add verbal or hand-written orders
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(
+            f'<div class="section-label">Manual Orders — {len(st.session_state.manual_orders)} entries</div>',
+            unsafe_allow_html=True,
+        )
+
+        mo_df = pd.DataFrame(st.session_state.manual_orders)
+        mo_df.columns = ['Store', 'Item', 'Qty', 'UOM', 'Remarks']
+
+        edited_mo = st.data_editor(
+            mo_df,
+            use_container_width=True,
+            hide_index=False,
+            num_rows="dynamic",
+            column_config={
+                "Store":   st.column_config.TextColumn("Store", width="medium"),
+                "Item":    st.column_config.TextColumn("Item", width="large"),
+                "Qty":     st.column_config.NumberColumn("Qty", min_value=0, width="small"),
+                "UOM":     st.column_config.TextColumn("UOM", width="small"),
+                "Remarks": st.column_config.TextColumn("Remarks", width="medium"),
+            },
+            key="mo_editor",
+        )
+
+        if edited_mo is not None:
+            st.session_state.manual_orders = edited_mo.rename(columns={
+                'Store': 'store', 'Item': 'item', 'Qty': 'qty', 'UOM': 'uom', 'Remarks': 'remarks'
+            }).to_dict('records')
+
+        mo_bc1, mo_bc2 = st.columns([2, 3])
+        with mo_bc1:
+            if st.button("🗑  Clear All Manual Orders", key="mo_clear"):
+                st.session_state.manual_orders = []
+                st.rerun()
+
+    st.markdown("---")
+
+    # ── Generate Combined Report PDF ──────────────────────────────────────────
+    st.markdown(f'<div class="section-label">Generate Combined Report</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:12px;">'
+        f'Combines unavailable items from the Undelivered Report tab + manual orders from this tab into one PDF.</div>',
+        unsafe_allow_html=True,
+    )
+
+    has_unavailable = bool(st.session_state.unavailable_items)
+    has_manual = bool(st.session_state.manual_orders)
+
+    if not has_unavailable and not has_manual:
+        st.markdown(
+            f'<div style="font-size:0.72rem; color:{MUTED}; padding:12px; '
+            f'border:1px dashed {BORDER}; border-radius:4px; text-align:center;">'
+            f'No data to generate report — add unavailable items in the Undelivered Report tab '
+            f'and/or add manual orders above.</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        # Summary of what will be included
+        summary_parts = []
+        if has_unavailable:
+            summary_parts.append(f"{len(st.session_state.unavailable_items)} unavailable item(s)")
+        if has_manual:
+            summary_parts.append(f"{len(st.session_state.manual_orders)} manual order(s)")
+        st.markdown(
+            f'<div style="font-size:0.72rem; color:{TEXT}; margin-bottom:8px;">'
+            f'Report will include: {" + ".join(summary_parts)}</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Use the same report settings from the Undelivered Report tab
+        # (they are stored in session state via widget keys)
+        r_title = st.session_state.get("ud_title", "COMBINED REPORT")
+        r_order = st.session_state.get("ud_order_date", "")
+        r_del = st.session_state.get("ud_del_date", "")
+        r_prep = st.session_state.get("ud_prep_by", "—")
+
+        combined_pdf = _generate_combined_pdf(
+            unavailable_items=st.session_state.unavailable_items,
+            manual_orders=st.session_state.manual_orders,
+            report_title=r_title or "COMBINED REPORT",
+            order_date=r_order,
+            delivery_date=r_del,
+            prepared_by=r_prep or "—",
+        )
+        title_safe = re.sub(r'[^\w\s-]', '', r_title or "COMBINED_REPORT").replace(' ', '_')
+        st.download_button(
+            label="📄  Download Combined Report (PDF)",
+            data=combined_pdf,
+            file_name=f"{title_safe}_COMBINED_{r_del}.pdf",
+            mime="application/pdf",
+            key="mo_combined_pdf",
+        )
+        st.markdown(
+            f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:6px;">'
+            f'Uses Report Settings from the Undelivered Report tab (title, dates, prepared by)</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
