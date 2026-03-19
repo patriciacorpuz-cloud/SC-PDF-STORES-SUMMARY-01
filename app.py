@@ -5,7 +5,10 @@ import re
 import io
 import json
 import base64
+import tempfile
+import os
 from pathlib import Path
+from collections import Counter
 import plotly.graph_objects as go
 
 # ─── LOGO (embedded for print reports) ─────────────────────────────────────────
@@ -32,6 +35,28 @@ BORDER = "#2A2A2A"
 TEXT   = "#F0EDE8"
 MUTED  = "#888880"
 GREEN  = "#4CAF50"
+RED    = "#E53935"
+
+# ─── MASTER STORE LIST ─────────────────────────────────────────────────────────
+# Enhancement 2: Expected stores for checklist. Update this list as stores open/close.
+MASTER_STORES = [
+    "ABC-(F) NUSTAR-BAR",
+    "ABC-(F) NUSTAR-KITCHEN",
+    "ABC-TGU-BAR",
+    "ABC-TGU-KITCHEN",
+    "ABC-CYBER-BAR",
+    "ABC-CYBER-KITCHEN",
+    "ABC-ZONE-BAR",
+    "ABC-ZONE-KITCHEN",
+    "ABC-SM SEASIDE-BAR",
+    "ABC-SM SEASIDE-KITCHEN",
+    "ABC-IL CORSO-BAR",
+    "ABC-IL CORSO-KITCHEN",
+    "ABC-BANILAD-BAR",
+    "ABC-BANILAD-KITCHEN",
+    "ABC-OAKRIDGE-BAR",
+    "ABC-OAKRIDGE-KITCHEN",
+]
 
 st.markdown(f"""
 <style>
@@ -150,6 +175,19 @@ st.markdown(f"""
     color: {GOLD} !important;
   }}
 
+  /* P2-H: Out-of-stock badge */
+  .out-badge {{
+    display: inline-block;
+    background: rgba(229,57,53,0.15);
+    border: 1px solid {RED};
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: {RED};
+    letter-spacing: 0.08em;
+  }}
+
   hr {{ border-color: {BORDER} !important; margin: 24px 0 !important; }}
   ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
   ::-webkit-scrollbar-track {{ background: {DARK}; }}
@@ -182,6 +220,12 @@ GRID_STYLE = dict(gridcolor=BORDER, zerolinecolor=BORDER)
 
 
 # ─── PDF PARSING ────────────────────────────────────────────────────────────────
+
+def clean_store_name(raw_name: str) -> str:
+    """P1-E/I: Strip date suffix like ' - 03_15_26' from filename-based store names."""
+    return re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}\s*$', '', raw_name).strip()
+
+
 def extract_store_name(text: str) -> str:
     match = re.search(
         r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(.+?)\s+LATEST TIME EDITED',
@@ -208,65 +252,155 @@ def extract_date(text: str, label: str) -> str:
     return match.group(1) if match else ""
 
 
-def parse_pdf(pdf_bytes: bytes, filename: str) -> pd.DataFrame:
+def extract_header_total(text: str) -> float | None:
+    """P1-F: Extract TOTAL AMOUNT from PDF header for validation."""
+    match = re.search(r'TOTAL\s+AMOUNT[:\s]*([\d,]+\.?\d*)', text, re.IGNORECASE)
+    if match:
+        try:
+            return float(match.group(1).replace(',', ''))
+        except ValueError:
+            return None
+    return None
+
+
+def extract_ordered_by(text: str) -> str:
+    """P2-L: Extract ORDERED BY from PDF header."""
+    match = re.search(r'ORDERED\s+BY\s+(.+?)(?:\s+TOTAL|\s+PICKED|\n)', text, re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def fix_merged_uom_amount(uom_val: str, amt_val: str, days_val: str) -> tuple[str, str, str]:
+    """P1-C: Split merged UOM+Amount like 'SHEET50.00' or 'ROLLS102.00'.
+    Also handles 'SHEET 50.00' (space-separated due to PDF line breaks).
+    When UOM has a merged number, the real amount is inside the UOM
+    and whatever was in the Amount column is actually Days to Last (shifted left).
+    Returns (fixed_uom, fixed_amount, fixed_days).
+    """
+    # Case 1: UOM has a number merged in (e.g. 'SHEET50.00' or 'ROLLS102.00')
+    m = re.match(r'^([A-Za-z]{2,})\s*(\d[\d,]*\.?\d*)$', uom_val.strip())
+    if m:
+        real_uom = m.group(1)
+        real_amt = m.group(2)
+        real_days = amt_val if amt_val else days_val
+        return real_uom, real_amt, real_days
+
+    # Case 2: Amount cell starts with letters (split across columns by pdfplumber).
+    # e.g. UOM='SHEE', Amount='T50.00' → real UOM='SHEET', real Amount='50.00'
+    if amt_val:
+        m2 = re.match(r'^([A-Za-z]+)(\d[\d,]*\.?\d*)$', amt_val.strip())
+        if m2:
+            real_uom = uom_val + m2.group(1)
+            real_amt = m2.group(2)
+            real_days = days_val
+            return real_uom, real_amt, real_days
+
+    return uom_val, amt_val, days_val
+
+
+def _join_fragmented_cells(row: list) -> list:
+    """P0-A: Rejoin cells that got split across columns due to PDF line breaks.
+    e.g. ['SECOND FLOO', 'R 20196', '1', ...] → ['SECOND FLOOR', '20196', '1', ...]
+    """
+    if not row or len(row) < 2:
+        return row
+    joined = list(row)
+    loc_val = str(joined[0] or '').strip()
+    next_val = str(joined[1] or '').strip()
+    # Detect: location is a partial word AND next cell starts with the continuation + a number
+    # e.g. loc="SECOND FLOO" next="R 20196"
+    if loc_val and next_val and re.match(r'^[A-Z]{1,3}\s+\d+', next_val):
+        parts = next_val.split(None, 1)
+        joined[0] = loc_val + parts[0]  # "SECOND FLOO" + "R" = "SECOND FLOOR"
+        joined[1] = parts[1] if len(parts) > 1 else ''  # "20196"
+    return joined
+
+
+def parse_pdf(pdf_bytes: bytes, filename: str) -> tuple[pd.DataFrame, list[str]]:
+    """Parse a single PDF file. Returns (DataFrame, list_of_warnings)."""
     rows = []
-    store_name    = Path(filename).stem
+    warnings = []
+    raw_store_name = Path(filename).stem
+    # P1-E/I: Strip date suffix from filename
+    store_name = clean_store_name(raw_store_name)
     order_date    = ""
     delivery_date = ""
+    ordered_by    = ""  # P2-L
+    header_total  = None  # P1-F
+
+    # Track column layout from page 1 header for continuation pages (P0-A)
+    known_col_count = None
+    last_location = ""  # Track last seen location for context
 
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             for page_num, page in enumerate(pdf.pages):
                 text = page.extract_text() or ""
                 if page_num == 0:
-                    # Use filename (stem) as the store name — it's set by staff and is reliable.
-                    # Only fall back to text extraction if filename is purely numeric/generic.
-                    if not re.match(r'^\d+$', store_name):
-                        pass  # keep filename as store name
+                    if not re.match(r'^\d+$', raw_store_name):
+                        pass  # keep filename (cleaned) as store name
                     else:
                         extracted = extract_store_name(text)
                         if extracted and extracted != "UNKNOWN":
                             store_name = extracted
                     order_date    = extract_date(text, "ORDER DATE")
                     delivery_date = extract_date(text, "DELIVERY DATE")
+                    ordered_by    = extract_ordered_by(text)
+                    header_total  = extract_header_total(text)
 
                 tables = page.extract_tables({
                     "vertical_strategy":   "lines",
                     "horizontal_strategy": "lines"
                 })
                 for table in tables:
-                    if not table or len(table) < 2:
+                    if not table or len(table) < 1:
                         continue
+
+                    # Look for header row with "LOCATION"
                     header_idx = None
                     for i, row in enumerate(table):
                         if row and any('LOCATION' in str(cell or '').upper() for cell in row):
                             header_idx = i
                             break
-                    if header_idx is None:
-                        continue
 
-                    def flat(cell):
-                        return ' '.join(str(cell or '').split()).upper()
+                    if header_idx is not None:
+                        # Standard page with header — extract column indices
+                        def flat(cell):
+                            return ' '.join(str(cell or '').split()).upper()
 
-                    header = [flat(h) for h in table[header_idx]]
+                        header = [flat(h) for h in table[header_idx]]
+                        known_col_count = len(header)
 
-                    def col(keyword):
-                        for i, h in enumerate(header):
-                            if keyword in h:
-                                return i
-                        return None
+                        def col(keyword):
+                            for ci, h in enumerate(header):
+                                if keyword in h:
+                                    return ci
+                            return None
 
-                    idx_loc   = col('LOCATION')
-                    idx_plu   = col('PLU')
-                    idx_order = col('ORDER')
-                    idx_item  = col('ITEM') or col('DESCRIPTION')
-                    idx_uom   = col('UOM')
-                    idx_amt   = col('TOTAL AMOUNT') or col('AMOUNT')
-                    idx_days  = col('DAYS')
+                        idx_loc   = col('LOCATION')
+                        idx_plu   = col('PLU')
+                        idx_order = col('ORDER')
+                        idx_item  = col('ITEM') or col('DESCRIPTION')
+                        idx_uom   = col('UOM')
+                        idx_amt   = col('TOTAL AMOUNT') or col('AMOUNT')
+                        idx_days  = col('DAYS')
 
-                    for row in table[header_idx + 1:]:
+                        data_rows = table[header_idx + 1:]
+                    else:
+                        # P0-A: Continuation page — no header row.
+                        # Reuse column layout from page 1.
+                        if known_col_count is None:
+                            warnings.append(f"Page {page_num+1}: skipped — no header row and no prior column layout")
+                            continue
+                        data_rows = table  # all rows are data
+
+                    for row in data_rows:
                         if not row:
                             continue
+
+                        # P0-A: Fix fragmented cells before extracting values
+                        row = _join_fragmented_cells(row)
 
                         def get(idx):
                             if idx is None or idx >= len(row):
@@ -276,27 +410,107 @@ def parse_pdf(pdf_bytes: bytes, filename: str) -> pd.DataFrame:
                         location = get(idx_loc)
                         item     = get(idx_item)
 
-                        if not location or location.upper() == 'LOCATION':
-                            continue
                         if not item or item.upper() in ('ITEM DESCRIPTION', 'DESCRIPTION'):
                             continue
+
+                        # P0-B: Allow empty location — we'll resolve it later via cross-reference.
+                        # Track last seen location for context.
+                        if location and location.upper() != 'LOCATION':
+                            last_location = location
+
+                        raw_uom  = get(idx_uom)
+                        raw_amt  = get(idx_amt)
+                        raw_days = get(idx_days)
+                        # P1-C: Fix merged UOM+Amount (also shifts Days when merge detected)
+                        fixed_uom, fixed_amt, fixed_days = fix_merged_uom_amount(
+                            raw_uom, raw_amt, raw_days
+                        )
+
+                        # P3-D: Flag blank amounts
+                        if not fixed_amt or fixed_amt.strip() == '':
+                            warnings.append(
+                                f"Blank amount: {store_name} → {item} (UOM: {fixed_uom})"
+                            )
 
                         rows.append({
                             'Store':            store_name,
                             'Order Date':       order_date,
                             'Delivery Date':    delivery_date,
-                            'Location':         location,
+                            'Ordered By':       ordered_by,
+                            'Location':         location if (location and location.upper() != 'LOCATION') else '',
                             'PLU Code':         get(idx_plu),
                             'Order Qty':        get(idx_order),
                             'Item Description': item,
-                            'UOM':              get(idx_uom),
-                            'Total Amount':     get(idx_amt),
-                            'Days to Last':     get(idx_days),
+                            'UOM':              fixed_uom,
+                            'Total Amount':     fixed_amt,
+                            'Days to Last':     fixed_days,
                         })
-    except Exception as e:
-        st.warning(f"Could not parse **{filename}**: {e}")
 
-    return pd.DataFrame(rows)
+    except Exception as e:
+        warnings.append(f"Could not parse {filename}: {e}")
+
+    df = pd.DataFrame(rows)
+
+    # P1-F: Validate parsed total vs PDF header total
+    if not df.empty and header_total is not None:
+        df['Total Amount'] = pd.to_numeric(
+            df['Total Amount'].astype(str).str.replace(',', '').str.strip(),
+            errors='coerce'
+        )
+        parsed_total = df['Total Amount'].sum()
+        if header_total > 0:
+            pct_diff = abs(parsed_total - header_total) / header_total * 100
+            if pct_diff > 1:
+                warnings.append(
+                    f"Total mismatch: parsed ₱{parsed_total:,.2f} vs PDF header ₱{header_total:,.2f} "
+                    f"(diff {pct_diff:.1f}%) — some rows may have been lost"
+                )
+        # Reset to string so clean_numeric runs uniformly later
+        df['Total Amount'] = df['Total Amount'].astype(str)
+
+    return df, warnings
+
+
+def resolve_empty_locations(df: pd.DataFrame, warnings: list[str]) -> pd.DataFrame:
+    """P0-B: Fill empty Location cells by cross-referencing item names.
+    1. If the same item appears elsewhere in the same store with a location, use that.
+    2. If the item appears across stores, use the most common location.
+    3. Otherwise fill 'UNKNOWN' and log a warning.
+    """
+    if df.empty:
+        return df
+
+    empty_mask = df['Location'].str.strip().eq('') | df['Location'].isna()
+    if not empty_mask.any():
+        return df
+
+    # Build lookup: item → list of known locations
+    known = df[~empty_mask].groupby('Item Description')['Location'].apply(list).to_dict()
+
+    for idx in df[empty_mask].index:
+        item = df.at[idx, 'Item Description']
+        store = df.at[idx, 'Store']
+        resolved = ''
+
+        if item in known:
+            locs = known[item]
+            # Prefer locations from the same store
+            same_store_locs = [
+                df.at[i, 'Location']
+                for i in df[(df['Item Description'] == item) & (df['Store'] == store) & (~empty_mask)].index
+            ]
+            if same_store_locs:
+                resolved = Counter(same_store_locs).most_common(1)[0][0]
+            else:
+                resolved = Counter(locs).most_common(1)[0][0]
+
+        if not resolved:
+            resolved = 'UNKNOWN'
+            warnings.append(f"Unknown location: {store} → {item} — set to UNKNOWN")
+
+        df.at[idx, 'Location'] = resolved
+
+    return df
 
 
 def clean_numeric(series: pd.Series) -> pd.Series:
@@ -304,6 +518,55 @@ def clean_numeric(series: pd.Series) -> pd.Series:
         series.astype(str).str.replace(',', '').str.strip(),
         errors='coerce'
     )
+
+
+# ─── GOOGLE DRIVE DOWNLOAD ────────────────────────────────────────────────────
+
+def download_from_gdrive(url: str) -> list[tuple[str, bytes]]:
+    """Enhancement 1: Download PDFs from a Google Drive link (file or folder).
+    Returns list of (filename, bytes) tuples.
+    """
+    try:
+        import gdown
+    except ImportError:
+        st.error("gdown is not installed. Add `gdown` to requirements.txt.")
+        return []
+
+    files = []
+    tmp_dir = tempfile.mkdtemp()
+
+    try:
+        # Detect folder link
+        folder_match = re.search(r'folders/([a-zA-Z0-9_-]+)', url)
+        file_match = re.search(r'(?:file/d/|id=)([a-zA-Z0-9_-]+)', url)
+
+        if folder_match:
+            folder_id = folder_match.group(1)
+            folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
+            gdown.download_folder(folder_url, output=tmp_dir, quiet=True)
+            # Collect all PDFs from downloaded folder
+            for root, _dirs, filenames in os.walk(tmp_dir):
+                for fname in filenames:
+                    if fname.lower().endswith('.pdf'):
+                        fpath = os.path.join(root, fname)
+                        with open(fpath, 'rb') as f:
+                            files.append((fname, f.read()))
+        elif file_match:
+            file_id = file_match.group(1)
+            dl_url = f"https://drive.google.com/uc?id={file_id}"
+            output_path = os.path.join(tmp_dir, "downloaded.pdf")
+            gdown.download(dl_url, output_path, quiet=True)
+            if os.path.exists(output_path):
+                # Try to get real filename from content
+                fname = "downloaded.pdf"
+                with open(output_path, 'rb') as f:
+                    files.append((fname, f.read()))
+        else:
+            st.warning("Could not parse Google Drive URL. Use a file or folder link.")
+    except Exception as e:
+        st.error(f"Google Drive download failed: {e}")
+
+    return files
 
 
 # ─── PRINT HTML GENERATORS ──────────────────────────────────────────────────────
@@ -461,8 +724,9 @@ def _print_base_css() -> str:
 """
 
 
-def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) -> str:
-    """Generates a branded print-ready Picklist."""
+def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str,
+                       ordered_by: str = "") -> str:
+    """Generates a branded print-ready Picklist. P2-K: Now includes PLU Code."""
 
     df_sorted = df_loc.sort_values(['Item Description', 'Store'])
 
@@ -471,6 +735,7 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
         detail_rows_html += f"""
         <tr>
           <td>{r['Store']}</td>
+          <td style="font-size:8pt; color:#888;">{r.get('PLU Code', '')}</td>
           <td>{r['Item Description']}</td>
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
@@ -486,17 +751,19 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
         <tr>
           <td>{r['Item Description']}</td>
           <td></td>
+          <td></td>
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
 
-    header = _print_header_html(
-        f"{location} — PICK LIST",
-        [
-            ("Delivery Date:", delivery_date, True),
-            ("Location:", location, False),
-            ("Total Lines:", str(len(df_sorted)), False),
-        ]
-    )
+    meta_rows = [
+        ("Delivery Date:", delivery_date, True),
+        ("Location:", location, False),
+        ("Total Lines:", str(len(df_sorted)), False),
+    ]
+    if ordered_by:
+        meta_rows.append(("Ordered By:", ordered_by, False))
+
+    header = _print_header_html(f"{location} — PICK LIST", meta_rows)
 
     return f"""<!DOCTYPE html>
 <html>
@@ -511,6 +778,7 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
   <thead>
     <tr>
       <th>STORE NAME</th>
+      <th style="width:60px;">PLU</th>
       <th>ITEM DESCRIPTION</th>
       <th style="text-align:center; width:70px;">QTY</th>
     </tr>
@@ -523,10 +791,11 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str) 
 <table class="data">
   <thead>
     <tr class="summary-section-header">
-      <td colspan="3">SUMMARY QTY</td>
+      <td colspan="4">SUMMARY QTY</td>
     </tr>
     <tr>
       <th>ITEM DESCRIPTION</th>
+      <th></th>
       <th></th>
       <th style="text-align:center; width:70px;">TOTAL QTY</th>
     </tr>
@@ -719,6 +988,8 @@ if 'df' not in st.session_state:
     st.session_state.file_names      = set()
 if 'undelivered_rows' not in st.session_state:
     st.session_state.undelivered_rows = []   # list of dicts
+if 'parse_warnings' not in st.session_state:
+    st.session_state.parse_warnings  = []    # P2-J: Parsing warning log
 
 
 # ─── SIDEBAR ────────────────────────────────────────────────────────────────────
@@ -736,25 +1007,55 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    uploaded_files = st.file_uploader(
-        "Upload PDF Orders",
-        type="pdf",
-        accept_multiple_files=True,
-        help="Drop all store PDFs here — supports 100+ at once"
+    # ── Enhancement 1: Google Drive input ──────────────────────────────────────
+    st.markdown(
+        f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
+        f'text-transform:uppercase; color:{MUTED}; margin-bottom:6px;">Input Source</div>',
+        unsafe_allow_html=True
+    )
+    input_mode = st.radio(
+        "How to load PDFs",
+        ["Upload Files", "Google Drive Link"],
+        horizontal=True,
+        label_visibility="collapsed"
     )
 
-    if uploaded_files:
-        new_files = [(f.name, f.read()) for f in uploaded_files]
-        new_names = {n for n, _ in new_files}
+    pdf_file_list = []  # list of (name, bytes)
+
+    if input_mode == "Google Drive Link":
+        gdrive_url = st.text_input(
+            "Google Drive URL",
+            placeholder="Paste a Google Drive file or folder link…",
+            help="Files must be set to 'Anyone with the link can view'"
+        )
+        if gdrive_url and st.button("📥  Download from Drive", use_container_width=True):
+            with st.spinner("Downloading from Google Drive…"):
+                pdf_file_list = download_from_gdrive(gdrive_url)
+            if pdf_file_list:
+                st.success(f"Downloaded {len(pdf_file_list)} PDF(s)")
+    else:
+        uploaded_files = st.file_uploader(
+            "Upload PDF Orders",
+            type="pdf",
+            accept_multiple_files=True,
+            help="Drop all store PDFs here — supports 100+ at once"
+        )
+        if uploaded_files:
+            pdf_file_list = [(f.name, f.read()) for f in uploaded_files]
+
+    if pdf_file_list:
+        new_names = {n for n, _ in pdf_file_list}
 
         if new_names != st.session_state.file_names:
             progress = st.progress(0, text="Reading PDFs…")
             dfs = []
-            for i, (name, data) in enumerate(new_files):
-                df_i = parse_pdf(data, name)
+            all_warnings = []
+            for i, (name, data) in enumerate(pdf_file_list):
+                df_i, file_warnings = parse_pdf(data, name)
+                all_warnings.extend(file_warnings)
                 if not df_i.empty:
                     dfs.append(df_i)
-                progress.progress((i + 1) / len(new_files), text=f"{i+1}/{len(new_files)}: {name}")
+                progress.progress((i + 1) / len(pdf_file_list), text=f"{i+1}/{len(pdf_file_list)}: {name}")
             progress.empty()
 
             if dfs:
@@ -763,14 +1064,16 @@ with st.sidebar:
                 combined['Total Amount'] = clean_numeric(combined['Total Amount'])
                 combined['Days to Last'] = clean_numeric(combined['Days to Last'])
                 combined = combined[combined['Item Description'].str.strip().str.len() > 0]
-                combined = combined[combined['Location'].str.strip().str.len() > 0]
-                st.session_state.df         = combined
-                st.session_state.file_names = new_names
+                # P0-B: Resolve empty locations via cross-reference instead of dropping rows
+                combined = resolve_empty_locations(combined, all_warnings)
+                st.session_state.df              = combined
+                st.session_state.file_names      = new_names
+                st.session_state.parse_warnings  = all_warnings
             else:
                 st.error("No data extracted from PDFs.")
 
         # Status badge
-        n = len(uploaded_files)
+        n = len(pdf_file_list)
         df_loaded = st.session_state.df
         del_dates = df_loaded['Delivery Date'].dropna().unique().tolist() if not df_loaded.empty else []
         del_label = del_dates[0] if len(del_dates) == 1 else (f"{len(del_dates)} dates" if del_dates else "—")
@@ -791,22 +1094,41 @@ with st.sidebar:
     if not st.session_state.df.empty:
         st.markdown("---")
 
+        # ── P2-J: Parsing Warnings Panel ──────────────────────────────────────
+        warn_list = st.session_state.parse_warnings
+        if warn_list:
+            with st.expander(f"⚠ Parsing Warnings ({len(warn_list)})", expanded=False):
+                for w in warn_list:
+                    icon = "🔴" if "mismatch" in w.lower() or "lost" in w.lower() else "🟡"
+                    st.markdown(
+                        f'<div style="font-size:0.72rem; padding:3px 0; '
+                        f'border-bottom:1px solid {BORDER}; color:{TEXT};">'
+                        f'{icon} {w}</div>',
+                        unsafe_allow_html=True
+                    )
+
         # ── Store Roster Check ──────────────────────────────────────────────
         df_check = st.session_state.df
         store_counts = df_check.groupby('Store').agg(
             Files=('Store', 'count'),
         ).reset_index()
 
-        # Detect duplicates: same store name appearing from >1 file
-        # (rough proxy: if a store appears with >1 distinct delivery date it may be a dupe upload)
-        store_file_map = {}
-        for fname in st.session_state.file_names:
-            # Re-check store name per file via the stored data
-            pass
-        # Simpler: flag stores whose row count seems doubled vs median
-        median_lines = store_counts['Files'].median()
-        store_counts['Flag'] = store_counts['Files'].apply(
-            lambda x: '⚠️ Possible duplicate' if x > median_lines * 1.8 else '✅'
+        # P3-G: Duplicate detection — check for same store + delivery date in multiple files
+        store_del_combos = df_check.groupby(['Store', 'Delivery Date']).size().reset_index(name='count')
+        # A store should only appear once per delivery date; flag if file count > expected items
+        dup_stores = set()
+        for _, combo in store_del_combos.iterrows():
+            store_name_val = combo['Store']
+            # Check if multiple filenames map to the same cleaned store name
+            matching_files = [
+                fn for fn in st.session_state.file_names
+                if clean_store_name(Path(fn).stem) == store_name_val
+            ]
+            if len(matching_files) > 1:
+                dup_stores.add(store_name_val)
+
+        store_counts['Flag'] = store_counts['Store'].apply(
+            lambda x: '⚠️ Possible duplicate' if x in dup_stores else '✅'
         )
 
         with st.expander(f"📋 Store Roster ({len(store_counts)} stores)", expanded=False):
@@ -849,6 +1171,7 @@ with st.sidebar:
             'df': st.session_state.df.to_dict('records'),
             'file_names': list(st.session_state.file_names),
             'undelivered_rows': st.session_state.undelivered_rows,
+            'parse_warnings': st.session_state.parse_warnings,
         }
         session_json = json.dumps(session_data, default=str)
         st.download_button(
@@ -865,6 +1188,7 @@ with st.sidebar:
             st.session_state.df              = pd.DataFrame()
             st.session_state.file_names      = set()
             st.session_state.undelivered_rows = []
+            st.session_state.parse_warnings  = []
             st.rerun()
 
     # ── Load Saved Session ───────────────────────────────────────────────────
@@ -893,6 +1217,7 @@ with st.sidebar:
             st.session_state.df               = df_restored
             st.session_state.file_names       = set(data.get('file_names', []))
             st.session_state.undelivered_rows = data.get('undelivered_rows', [])
+            st.session_state.parse_warnings   = data.get('parse_warnings', [])
             st.session_state.session_loaded_key = loaded_session.name
             st.success("✅ Session restored!")
             st.rerun()
@@ -932,7 +1257,7 @@ if df.empty:
 
 # ─── GLOBAL FILTERS ─────────────────────────────────────────────────────────────
 st.markdown(f'<div class="section-label">Filters</div>', unsafe_allow_html=True)
-f1, f2, f3 = st.columns(3)
+f1, f2, f3, f4 = st.columns([2, 2, 2, 1])
 
 with f1:
     all_stores = sorted(df['Store'].dropna().unique())
@@ -945,6 +1270,11 @@ with f2:
 with f3:
     search_item = st.text_input("Search Item", placeholder="e.g. CHICKEN, BEEF…")
 
+with f4:
+    # P2-H: Out-of-stock filter toggle
+    show_oos_only = st.toggle("Out of Stock only", value=False, key="oos_filter",
+                               help="Show only items where Days to Last = 0")
+
 filtered = df.copy()
 if sel_stores:
     filtered = filtered[filtered['Store'].isin(sel_stores)]
@@ -952,6 +1282,8 @@ if sel_locs:
     filtered = filtered[filtered['Location'].isin(sel_locs)]
 if search_item:
     filtered = filtered[filtered['Item Description'].str.contains(search_item, case=False, na=False)]
+if show_oos_only:
+    filtered = filtered[filtered['Days to Last'] == 0]
 
 
 # ─── KPIs ────────────────────────────────────────────────────────────────────────
@@ -959,6 +1291,8 @@ total_stores = filtered['Store'].nunique()
 unique_items = filtered['Item Description'].nunique()
 total_lines  = len(filtered)
 total_amount = filtered['Total Amount'].sum()
+# P2-H: Count out-of-stock items
+oos_count = int((filtered['Days to Last'] == 0).sum())
 
 st.markdown(f"""
 <div class="kpi-row">
@@ -982,6 +1316,11 @@ st.markdown(f"""
     <div class="kpi-value">₱{total_amount:,.0f}</div>
     <div class="kpi-sub">filtered total</div>
   </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Out of Stock</div>
+    <div class="kpi-value" style="color:{RED if oos_count > 0 else TEXT};">{oos_count}</div>
+    <div class="kpi-sub">Days to Last = 0</div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -996,12 +1335,14 @@ st.markdown("---")
 
 
 # ─── TABS ────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "  📋  PICK LIST  ",
     "  📦  ITEM ALLOCATION  ",
     "  🏪  STORE MATRIX  ",
     "  📊  ALL ORDERS  ",
     "  🚫  UNDELIVERED REPORT  ",
+    "  🏬  STORE SUMMARY  ",
+    "  ✅  STORE CHECKLIST  ",
 ])
 
 
@@ -1038,18 +1379,23 @@ with tab1:
             loc_del_dates = df_loc['Delivery Date'].dropna().unique()
             loc_del = loc_del_dates[0] if len(loc_del_dates) > 0 else "—"
 
+            # P2-L: Get ordered_by for header
+            loc_ordered_by = df_loc['Ordered By'].dropna().unique() if 'Ordered By' in df_loc.columns else []
+            loc_ordered_by_str = ", ".join(sorted(set(loc_ordered_by))) if len(loc_ordered_by) > 0 else ""
+
             # Header info
             loc_stores = df_loc['Store'].nunique()
             loc_items  = df_loc['Item Description'].nunique()
             loc_total  = df_loc['Order Qty'].sum()
 
             st.markdown(f"""
-            <div style="display:flex; gap:16px; margin-bottom:16px;">
+            <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
               <span class="info-pill">📍 {sel_loc}</span>
               <span class="info-pill">🏪 {loc_stores} stores</span>
               <span class="info-pill">📦 {loc_items} items</span>
               <span class="info-pill">🔢 {int(loc_total) if pd.notna(loc_total) else 0} total units</span>
               <span class="info-pill">📅 Delivery: {loc_del}</span>
+              {f'<span class="info-pill">👤 {loc_ordered_by_str}</span>' if loc_ordered_by_str else ''}
             </div>
             """, unsafe_allow_html=True)
 
@@ -1057,11 +1403,11 @@ with tab1:
             if show_store_breakdown:
                 display = (
                     df_loc.groupby(['Store', 'Item Description', 'PLU Code', 'UOM'])
-                    .agg(Qty=('Order Qty', 'sum'))
+                    .agg(Qty=('Order Qty', 'sum'), DaysToLast=('Days to Last', 'min'))
                     .reset_index()
                     .sort_values(['Item Description', 'Store'])
                 )
-                display.columns = ['Store', 'Item Description', 'PLU Code', 'UOM', 'Qty']
+                display.columns = ['Store', 'Item Description', 'PLU Code', 'UOM', 'Qty', 'Days to Last']
                 st.dataframe(display, use_container_width=True, hide_index=True, height=420)
             else:
                 display = (
@@ -1094,13 +1440,13 @@ with tab1:
 
             # ── Print / Download ──
             st.markdown("<br>", unsafe_allow_html=True)
-            html_picklist = make_picklist_html(df_loc, sel_loc, loc_del)
+            html_picklist = make_picklist_html(df_loc, sel_loc, loc_del, loc_ordered_by_str)
             st.download_button(
                 label=f"🖨  Download {sel_loc} Pick List (Print-Ready HTML)",
                 data=html_picklist.encode('utf-8'),
                 file_name=f"PICKLIST_{sel_loc.replace(' ', '_')}_{loc_del}.html",
                 mime="text/html",
-                key="dl_picklist"
+                key=f"dl_picklist_{sel_loc}"  # P3-M: Dynamic key
             )
             st.markdown(
                 f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:6px;">'
@@ -1219,7 +1565,7 @@ with tab2:
                 height=min(500, 56 + len(display_alloc) * 36)
             )
 
-            # Download allocation sheet
+            # Download allocation sheet — P3-M: Dynamic key
             st.markdown("<br>", unsafe_allow_html=True)
             html_alloc = make_allocation_html(df_item, sel_item, del_item)
             item_safe = re.sub(r'[^\w\s-]', '', sel_item).strip().replace(' ', '_')
@@ -1228,7 +1574,7 @@ with tab2:
                 data=html_alloc.encode('utf-8'),
                 file_name=f"ALLOCATION_{item_safe}_{del_item}.html",
                 mime="text/html",
-                key="dl_alloc"
+                key=f"dl_alloc_{item_safe}"
             )
             st.markdown(
                 f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:6px;">'
@@ -1319,22 +1665,38 @@ with tab3:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# TAB 4 — ALL ORDERS (Full Detail)
+# TAB 4 — ALL ORDERS (Full Detail) + P2-H: Out-of-stock highlighting
 # ══════════════════════════════════════════════════════════════════════════════════
 with tab4:
     st.markdown(f"""
     <div style="font-size:0.72rem; color:{MUTED}; margin-bottom:14px;">
       Complete extracted data from all uploaded PDFs
+      {f' &nbsp;·&nbsp; <span class="out-badge">OUT</span> = Days to Last is 0 (out of stock)' if oos_count > 0 else ''}
     </div>
     """, unsafe_allow_html=True)
 
+    display_cols = [
+        'Store', 'Ordered By', 'Order Date', 'Delivery Date',
+        'Location', 'PLU Code', 'Item Description',
+        'Order Qty', 'UOM', 'Total Amount', 'Days to Last'
+    ]
+    # Only show columns that exist
+    display_cols = [c for c in display_cols if c in filtered.columns]
+
+    all_orders_display = filtered[display_cols].sort_values(
+        ['Store', 'Location', 'Item Description']
+    ).copy()
+
     st.dataframe(
-        filtered[[
-            'Store', 'Order Date', 'Delivery Date',
-            'Location', 'PLU Code', 'Item Description',
-            'Order Qty', 'UOM', 'Total Amount', 'Days to Last'
-        ]].sort_values(['Store', 'Location', 'Item Description']),
-        use_container_width=True, hide_index=True, height=550
+        all_orders_display,
+        use_container_width=True, hide_index=True, height=550,
+        column_config={
+            "Days to Last": st.column_config.NumberColumn(
+                "Days to Last",
+                help="0 = OUT OF STOCK",
+                format="%.2f",
+            ),
+        }
     )
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -1543,3 +1905,151 @@ with tab5:
                 'You can also edit cells directly in the table above</div>',
                 unsafe_allow_html=True
             )
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TAB 6 — STORE SUMMARY (P2-N: Per-store order summary for delivery team)
+# ══════════════════════════════════════════════════════════════════════════════════
+with tab6:
+    st.markdown(f"""
+    <div style="margin-bottom:12px;">
+      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+                  text-transform:uppercase; font-weight:600;">
+        Per-store order totals — useful for the delivery team
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    store_summary = (
+        filtered.groupby('Store')
+        .agg(
+            Items_Ordered  = ('Item Description', 'nunique'),
+            Total_Lines    = ('Item Description', 'count'),
+            Total_Qty      = ('Order Qty',        'sum'),
+            Total_Amount   = ('Total Amount',      'sum'),
+            Ordered_By     = ('Ordered By',        'first'),
+            Order_Date     = ('Order Date',        'first'),
+            Delivery_Date  = ('Delivery Date',     'first'),
+            OOS_Count      = ('Days to Last',      lambda x: (x == 0).sum()),
+        )
+        .reset_index()
+        .sort_values('Store')
+    )
+    store_summary.columns = [
+        'Store', 'Unique Items', 'Total Lines', 'Total Qty',
+        'Total Amount (₱)', 'Ordered By', 'Order Date', 'Delivery Date', 'Out of Stock'
+    ]
+    store_summary['Total Qty'] = store_summary['Total Qty'].apply(
+        lambda x: int(x) if pd.notna(x) else 0)
+    store_summary['Total Amount (₱)'] = store_summary['Total Amount (₱)'].map(
+        lambda x: f'{x:,.2f}' if pd.notna(x) else '—')
+
+    st.dataframe(
+        store_summary,
+        use_container_width=True, hide_index=True,
+        height=min(600, 56 + len(store_summary) * 36),
+        column_config={
+            "Out of Stock": st.column_config.NumberColumn(
+                "OOS Items",
+                help="Items where Days to Last = 0"
+            ),
+        }
+    )
+
+    # Bar chart — total amount per store
+    if not filtered.empty:
+        amt_by_store = (
+            filtered.groupby('Store')['Total Amount']
+            .sum().reset_index()
+            .sort_values('Total Amount', ascending=True)
+        )
+        if not amt_by_store.empty:
+            st.markdown(f'<div class="section-label" style="margin-top:16px;">Order Amount by Store</div>',
+                        unsafe_allow_html=True)
+            fig_store = go.Figure(go.Bar(
+                x=amt_by_store['Total Amount'],
+                y=amt_by_store['Store'],
+                orientation='h',
+                marker=dict(color=GOLD, line=dict(width=0)),
+                hovertemplate='<b>%{y}</b><br>₱%{x:,.2f}<extra></extra>'
+            ))
+            fig_store.update_layout(
+                **CHART_LAYOUT,
+                height=max(300, len(amt_by_store) * 32),
+                xaxis=dict(title="Amount (₱)", **GRID_STYLE),
+                yaxis=dict(title="", tickfont=dict(size=9)),
+            )
+            st.plotly_chart(fig_store, use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════════════════════
+# TAB 7 — STORE CHECKLIST (Enhancement 2)
+# ══════════════════════════════════════════════════════════════════════════════════
+with tab7:
+    st.markdown(f"""
+    <div style="margin-bottom:12px;">
+      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+                  text-transform:uppercase; font-weight:600;">
+        Submission status for all expected stores — check for missing PDFs
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    loaded_stores = set(df['Store'].dropna().unique()) if not df.empty else set()
+    del_date_label = sorted(df['Delivery Date'].dropna().unique())[0] if not df.empty else "—"
+
+    checklist_data = []
+    for master_store in MASTER_STORES:
+        found = master_store in loaded_stores
+        checklist_data.append({
+            'Store': master_store,
+            'Status': '✅ Received' if found else '❌ Missing',
+            'Lines': int(df[df['Store'] == master_store].shape[0]) if found else 0,
+            'Amount': f"₱{df[df['Store'] == master_store]['Total Amount'].sum():,.2f}" if found else "—",
+        })
+
+    # Also add any loaded stores NOT in master list (unexpected stores)
+    for store in sorted(loaded_stores):
+        if store not in MASTER_STORES:
+            checklist_data.append({
+                'Store': store,
+                'Status': '🟡 Not in master list',
+                'Lines': int(df[df['Store'] == store].shape[0]),
+                'Amount': f"₱{df[df['Store'] == store]['Total Amount'].sum():,.2f}",
+            })
+
+    checklist_df = pd.DataFrame(checklist_data)
+    received = sum(1 for r in checklist_data if '✅' in r['Status'])
+    missing  = sum(1 for r in checklist_data if '❌' in r['Status'])
+
+    st.markdown(f"""
+    <div style="display:flex; gap:16px; margin-bottom:16px;">
+      <span class="info-pill">📅 Delivery: {del_date_label}</span>
+      <span class="info-pill" style="color:{GREEN};">✅ {received} received</span>
+      <span class="info-pill" style="color:{RED}; border-color:{RED};">❌ {missing} missing</span>
+      <span class="info-pill">📋 {len(MASTER_STORES)} expected</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.dataframe(
+        checklist_df,
+        use_container_width=True,
+        hide_index=True,
+        height=min(700, 56 + len(checklist_df) * 36),
+        column_config={
+            "Status": st.column_config.TextColumn("Status", width="medium"),
+        }
+    )
+
+    if missing > 0:
+        missing_stores = [r['Store'] for r in checklist_data if '❌' in r['Status']]
+        st.markdown(
+            f'<div style="margin-top:12px; padding:12px; background:rgba(229,57,53,0.08); '
+            f'border:1px solid rgba(229,57,53,0.3); border-radius:4px;">'
+            f'<div style="font-size:0.7rem; font-weight:600; color:{RED}; margin-bottom:6px;">'
+            f'Missing PDFs ({missing}):</div>'
+            f'<div style="font-size:0.75rem; color:{TEXT};">'
+            + " · ".join(missing_stores)
+            + '</div></div>',
+            unsafe_allow_html=True
+        )
