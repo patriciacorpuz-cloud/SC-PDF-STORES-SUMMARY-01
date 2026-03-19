@@ -1802,60 +1802,82 @@ with tab5:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# TAB 7 — STORE CHECKLIST (upload-based master list)
+# TAB 7 — STORE CHECKLIST (Google Sheets master list)
 # ══════════════════════════════════════════════════════════════════════════════════
+
+# Google Sheet ID for the master store list.
+# Replace with your actual Sheet ID (the long string between /d/ and /edit in the URL).
+_MASTER_SHEET_ID = "YOUR_SHEET_ID_HERE"
+_MASTER_SHEET_CSV_URL = f"https://docs.google.com/spreadsheets/d/{_MASTER_SHEET_ID}/export?format=csv"
+
+
+def _fetch_master_stores_from_sheet() -> list[str]:
+    """Fetch the master store list from a published Google Sheet (CSV export)."""
+    import requests
+    try:
+        resp = requests.get(_MASTER_SHEET_CSV_URL, timeout=15)
+        resp.raise_for_status()
+        master_df = pd.read_csv(io.StringIO(resp.text))
+
+        # Find the Store column (case-insensitive)
+        store_col = None
+        for c in master_df.columns:
+            if c.strip().upper() == 'STORE':
+                store_col = c
+                break
+        if store_col is None:
+            st.error("**No 'Store' column found** in the Google Sheet. "
+                     "Make sure the first row has a column named 'Store'.")
+            return []
+
+        stores = master_df[store_col].dropna().astype(str).str.strip().tolist()
+        return [s for s in stores if s]
+    except requests.exceptions.HTTPError as e:
+        st.error(
+            f"**Could not access Google Sheet.** Make sure sharing is set to "
+            f"'Anyone with the link can view'.\n\nHTTP {e.response.status_code}"
+        )
+        return []
+    except Exception as e:
+        st.error(f"**Failed to fetch master store list:** {e}")
+        return []
+
+
 with tab7:
     st.markdown(f"""
     <div style="margin-bottom:12px;">
       <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
-        Upload a master store list → compare against parsed PDFs → see who's missing
+        Master store list from Google Sheet → compare against parsed PDFs → see who's missing
       </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Master list uploader (persisted in session_state) ──────────────────────
+    # ── Auto-fetch on first load, persist in session_state ─────────────────────
     if 'checklist_master_stores' not in st.session_state:
         st.session_state.checklist_master_stores = []
+    if 'checklist_loaded' not in st.session_state:
+        st.session_state.checklist_loaded = False
 
-    master_file = st.file_uploader(
-        "Upload expected store list",
-        type=["csv", "xlsx", "xls"],
-        key="checklist_master_upload",
-        help="Upload a CSV or Excel file with a 'Store' column listing all stores expected to submit today"
-    )
-    st.markdown(
-        f'<div style="font-size:0.68rem; color:{MUTED}; margin-top:-8px; margin-bottom:12px;">'
-        f'Upload a CSV or Excel file with a "Store" column listing all stores expected to submit today</div>',
-        unsafe_allow_html=True
-    )
+    # Auto-fetch on first visit (only once)
+    if not st.session_state.checklist_loaded and _MASTER_SHEET_ID != "YOUR_SHEET_ID_HERE":
+        with st.spinner("Loading master store list from Google Sheet…"):
+            fetched = _fetch_master_stores_from_sheet()
+        if fetched:
+            st.session_state.checklist_master_stores = fetched
+            st.session_state.checklist_loaded = True
+            st.success(f"✓ Loaded **{len(fetched)}** stores from Google Sheet")
 
-    if master_file is not None:
-        try:
-            if master_file.name.lower().endswith('.csv'):
-                master_df = pd.read_csv(master_file)
-            else:
-                master_df = pd.read_excel(master_file)
-
-            # Find the Store column (case-insensitive)
-            store_col = None
-            for c in master_df.columns:
-                if c.strip().upper() == 'STORE':
-                    store_col = c
-                    break
-
-            if store_col is None:
-                st.error("**No 'Store' column found.** Make sure your file has a column named 'Store'.")
-            else:
-                master_list = master_df[store_col].dropna().astype(str).str.strip().tolist()
-                master_list = [s for s in master_list if s]  # remove blanks
-                if master_list:
-                    st.session_state.checklist_master_stores = master_list
-                    st.success(f"Loaded **{len(master_list)}** expected stores from **{master_file.name}**")
-                else:
-                    st.warning("**Store column is empty.** No store names found.")
-        except Exception as e:
-            st.error(f"Could not read file: {e}")
+    # Manual refresh button
+    if st.button("🔄  Refresh from Sheet", key="refresh_master_sheet"):
+        with st.spinner("Refreshing master store list…"):
+            fetched = _fetch_master_stores_from_sheet()
+        if fetched:
+            st.session_state.checklist_master_stores = fetched
+            st.session_state.checklist_loaded = True
+            st.success(f"✓ Loaded **{len(fetched)}** stores from Google Sheet")
+        elif not fetched and _MASTER_SHEET_ID == "YOUR_SHEET_ID_HERE":
+            st.warning("**Sheet ID not configured.** Replace `YOUR_SHEET_ID_HERE` in app.py with your Google Sheet ID.")
 
     st.markdown("---")
 
@@ -1865,14 +1887,20 @@ with tab7:
     del_date_label = sorted(df['Delivery Date'].dropna().unique())[0] if not df.empty else "—"
 
     if not master_stores:
+        placeholder_msg = (
+            'Replace <code>YOUR_SHEET_ID_HERE</code> in app.py with your Google Sheet ID, '
+            'then refresh this page'
+        ) if _MASTER_SHEET_ID == "YOUR_SHEET_ID_HERE" else (
+            'Click "Refresh from Sheet" above to load the master store list'
+        )
         st.markdown(f"""
         <div style="padding:36px; text-align:center; color:{MUTED};
                     border:1px dashed {BORDER}; border-radius:4px;">
           <div style="font-size:0.8rem; letter-spacing:0.1em; text-transform:uppercase;">
-            Upload a master store list above to begin
+            No master store list loaded
           </div>
           <div style="font-size:0.72rem; margin-top:8px;">
-            The checklist will compare your expected stores against the parsed PDFs
+            {placeholder_msg}
           </div>
         </div>
         """, unsafe_allow_html=True)
