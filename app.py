@@ -5,7 +5,6 @@ import re
 import io
 import json
 import base64
-import tempfile
 import os
 from pathlib import Path
 from collections import Counter
@@ -37,26 +36,6 @@ MUTED  = "#888880"
 GREEN  = "#4CAF50"
 RED    = "#E53935"
 
-# ─── MASTER STORE LIST ─────────────────────────────────────────────────────────
-# Enhancement 2: Expected stores for checklist. Update this list as stores open/close.
-MASTER_STORES = [
-    "ABC-(F) NUSTAR-BAR",
-    "ABC-(F) NUSTAR-KITCHEN",
-    "ABC-TGU-BAR",
-    "ABC-TGU-KITCHEN",
-    "ABC-CYBER-BAR",
-    "ABC-CYBER-KITCHEN",
-    "ABC-ZONE-BAR",
-    "ABC-ZONE-KITCHEN",
-    "ABC-SM SEASIDE-BAR",
-    "ABC-SM SEASIDE-KITCHEN",
-    "ABC-IL CORSO-BAR",
-    "ABC-IL CORSO-KITCHEN",
-    "ABC-BANILAD-BAR",
-    "ABC-BANILAD-KITCHEN",
-    "ABC-OAKRIDGE-BAR",
-    "ABC-OAKRIDGE-KITCHEN",
-]
 
 st.markdown(f"""
 <style>
@@ -520,182 +499,6 @@ def clean_numeric(series: pd.Series) -> pd.Series:
     )
 
 
-# ─── GOOGLE DRIVE DOWNLOAD ────────────────────────────────────────────────────
-
-def download_from_gdrive(url: str) -> list[tuple[str, bytes]]:
-    """Enhancement 1: Download PDFs from a Google Drive link (file or folder).
-    Returns list of (filename, bytes) tuples.
-    Shows progress bar and detailed status messages.
-    """
-    try:
-        import gdown
-    except ImportError:
-        st.error(
-            "**gdown is not installed.** Add `gdown>=5.1.0` to requirements.txt "
-            "and redeploy, or run `pip install gdown`."
-        )
-        return []
-
-    files = []
-    tmp_dir = tempfile.mkdtemp()
-
-    # Detect folder vs file link
-    folder_match = re.search(r'folders/([a-zA-Z0-9_-]+)', url)
-    file_match = re.search(r'(?:file/d/|id=)([a-zA-Z0-9_-]+)', url)
-
-    if not folder_match and not file_match:
-        st.error(
-            "**Could not parse Google Drive URL.** Supported formats:\n"
-            "- `https://drive.google.com/drive/folders/FOLDER_ID`\n"
-            "- `https://drive.google.com/file/d/FILE_ID/view`\n"
-            "- `https://drive.google.com/open?id=FILE_ID`"
-        )
-        return []
-
-    progress = st.progress(0, text="Connecting to Google Drive…")
-
-    try:
-        if folder_match:
-            # ── Folder download ──────────────────────────────────────────
-            folder_id = folder_match.group(1)
-            progress.progress(5, text="Listing folder contents…")
-
-            # First pass: list files without downloading to get count
-            try:
-                file_list = gdown.download_folder(
-                    id=folder_id,
-                    output=tmp_dir,
-                    quiet=True,
-                    skip_download=True,  # just list, don't download yet
-                )
-            except Exception as e:
-                progress.empty()
-                st.error(
-                    f"**Could not access folder.** Make sure sharing is set to "
-                    f"'Anyone with the link can view'.\n\nError: {e}"
-                )
-                return []
-
-            if not file_list:
-                progress.empty()
-                st.warning("**Folder is empty or not accessible.** Check sharing permissions.")
-                return []
-
-            # Filter to PDFs only (file_list items have .path attribute in skip_download mode)
-            pdf_entries = [
-                f for f in file_list
-                if str(getattr(f, 'path', getattr(f, 'local_path', str(f))) or '').lower().endswith('.pdf')
-                or str(getattr(f, 'name', str(f)) or '').lower().endswith('.pdf')
-            ]
-
-            if not pdf_entries:
-                # Fall back: download everything and filter after
-                pdf_entries = file_list
-
-            total = len(pdf_entries)
-            progress.progress(10, text=f"Found {total} file(s) — downloading…")
-
-            # Second pass: actually download
-            try:
-                downloaded_paths = gdown.download_folder(
-                    id=folder_id,
-                    output=tmp_dir,
-                    quiet=True,
-                    skip_download=False,
-                )
-            except Exception as e:
-                progress.empty()
-                st.error(f"**Download failed.** {e}")
-                return []
-
-            # Collect all PDFs from downloaded folder
-            pdf_files_on_disk = []
-            for root, _dirs, filenames in os.walk(tmp_dir):
-                for fname in filenames:
-                    if fname.lower().endswith('.pdf'):
-                        pdf_files_on_disk.append((fname, os.path.join(root, fname)))
-
-            if not pdf_files_on_disk:
-                progress.empty()
-                st.warning("**No PDF files found in folder.** The folder may contain other file types.")
-                return []
-
-            total_pdfs = len(pdf_files_on_disk)
-            for i, (fname, fpath) in enumerate(pdf_files_on_disk):
-                progress.progress(
-                    10 + int(90 * (i + 1) / total_pdfs),
-                    text=f"Reading {i+1} of {total_pdfs}: {fname}"
-                )
-                try:
-                    with open(fpath, 'rb') as f:
-                        data = f.read()
-                    if len(data) > 0:
-                        files.append((fname, data))
-                    else:
-                        st.warning(f"Skipped empty file: **{fname}**")
-                except Exception as e:
-                    st.warning(f"Could not read **{fname}**: {e}")
-
-        else:
-            # ── Single file download ─────────────────────────────────────
-            file_id = file_match.group(1)
-            progress.progress(10, text="Downloading file…")
-
-            # Use fuzzy=True so gdown can handle various Drive URL formats,
-            # and pass the original URL so gdown can extract the real filename.
-            output_path = os.path.join(tmp_dir, "download.pdf")
-            try:
-                result = gdown.download(
-                    id=file_id,
-                    output=output_path,
-                    quiet=True,
-                    fuzzy=False,
-                )
-            except Exception as e:
-                progress.empty()
-                st.error(
-                    f"**Download failed.** Make sure the file is set to "
-                    f"'Anyone with the link can view'.\n\nError: {e}"
-                )
-                return []
-
-            if result is None or not os.path.exists(output_path):
-                progress.empty()
-                st.error(
-                    "**File not accessible.** Make sure:\n"
-                    "1. Sharing is set to 'Anyone with the link can view'\n"
-                    "2. The link is a valid Google Drive file link\n"
-                    "3. The file has not been deleted"
-                )
-                return []
-
-            progress.progress(80, text="Reading downloaded file…")
-
-            # Use the actual filename gdown saved (it often renames to the real name)
-            actual_path = result if isinstance(result, str) and os.path.exists(result) else output_path
-            fname = os.path.basename(actual_path)
-            # Ensure it has .pdf extension
-            if not fname.lower().endswith('.pdf'):
-                fname = fname + '.pdf'
-
-            with open(actual_path, 'rb') as f:
-                data = f.read()
-
-            if len(data) == 0:
-                progress.empty()
-                st.error("**Downloaded file is empty.** The file may be corrupted or inaccessible.")
-                return []
-
-            files.append((fname, data))
-
-    except Exception as e:
-        progress.empty()
-        st.error(f"**Google Drive download failed:** {e}")
-        return []
-
-    progress.progress(100, text=f"✓ Downloaded {len(files)} PDF(s) — parsing now…")
-    return files
-
 
 # ─── PRINT HTML GENERATORS ──────────────────────────────────────────────────────
 
@@ -1135,40 +938,67 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Enhancement 1: Google Drive input ──────────────────────────────────────
+    # ── PDF Input Options ─────────────────────────────────────────────────────
     st.markdown(
         f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
-        f'text-transform:uppercase; color:{MUTED}; margin-bottom:6px;">Input Source</div>',
+        f'text-transform:uppercase; color:{GOLD}; margin-bottom:8px;">Option 1: Load from local folder</div>',
         unsafe_allow_html=True
     )
-    input_mode = st.radio(
-        "How to load PDFs",
-        ["Upload Files", "Google Drive Link"],
-        horizontal=True,
+    folder_path = st.text_input(
+        "Local folder path",
+        placeholder="/Users/you/Downloads/picklists",
+        help="Paste the full path to a folder containing PDF order files",
         label_visibility="collapsed"
     )
+    fc1, fc2 = st.columns([1, 1])
+    with fc1:
+        scan_clicked = st.button("📂  Scan Folder", use_container_width=True, key="scan_folder")
+    with fc2:
+        refresh_clicked = st.button("🔄  Refresh", use_container_width=True, key="refresh_folder")
 
     pdf_file_list = []  # list of (name, bytes)
 
-    if input_mode == "Google Drive Link":
-        gdrive_url = st.text_input(
-            "Google Drive URL",
-            placeholder="Paste a Google Drive file or folder link…",
-            help="Files must be set to 'Anyone with the link can view'"
-        )
-        if gdrive_url and st.button("📥  Download from Drive", use_container_width=True):
-            pdf_file_list = download_from_gdrive(gdrive_url)
-            if pdf_file_list:
-                st.success(f"✓ Downloaded {len(pdf_file_list)} PDF(s)")
-    else:
-        uploaded_files = st.file_uploader(
-            "Upload PDF Orders",
-            type="pdf",
-            accept_multiple_files=True,
-            help="Drop all store PDFs here — supports 100+ at once"
-        )
-        if uploaded_files:
-            pdf_file_list = [(f.name, f.read()) for f in uploaded_files]
+    if folder_path and (scan_clicked or refresh_clicked):
+        folder = Path(folder_path)
+        if not folder.exists():
+            st.error(f"**Folder not found:** `{folder_path}`")
+        elif not folder.is_dir():
+            st.error(f"**Not a folder:** `{folder_path}`")
+        else:
+            pdf_paths = sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
+            # Deduplicate (case-insensitive filesystems may return same file twice)
+            seen = set()
+            unique_paths = []
+            for p in pdf_paths:
+                if p.name not in seen:
+                    seen.add(p.name)
+                    unique_paths.append(p)
+            pdf_paths = unique_paths
+
+            if not pdf_paths:
+                st.warning(f"**No PDF files found** in `{folder_path}`")
+            else:
+                st.success(f"Found **{len(pdf_paths)} PDF(s)** in folder")
+                for p in pdf_paths:
+                    try:
+                        pdf_file_list.append((p.name, p.read_bytes()))
+                    except Exception as e:
+                        st.warning(f"Could not read **{p.name}**: {e}")
+
+    st.markdown("---")
+    st.markdown(
+        f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
+        f'text-transform:uppercase; color:{GOLD}; margin-bottom:8px;">Option 2: Upload files manually</div>',
+        unsafe_allow_html=True
+    )
+    uploaded_files = st.file_uploader(
+        "Upload PDF Orders",
+        type="pdf",
+        accept_multiple_files=True,
+        help="Drop all store PDFs here — supports 100+ at once"
+    )
+    if uploaded_files:
+        pdf_file_list = [(f.name, f.read()) for f in uploaded_files]
 
     if pdf_file_list:
         new_names = {n for n, _ in pdf_file_list}
@@ -1462,13 +1292,11 @@ st.markdown("---")
 
 
 # ─── TABS ────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab4, tab5, tab7 = st.tabs([
     "  📋  PICK LIST  ",
     "  📦  ITEM ALLOCATION  ",
-    "  🏪  STORE MATRIX  ",
     "  📊  ALL ORDERS  ",
     "  🚫  UNDELIVERED REPORT  ",
-    "  🏬  STORE SUMMARY  ",
     "  ✅  STORE CHECKLIST  ",
 ])
 
@@ -1728,68 +1556,6 @@ with tab2:
                 st.plotly_chart(fig2, use_container_width=True)
 
 
-# ══════════════════════════════════════════════════════════════════════════════════
-# TAB 3 — STORE × ITEM MATRIX
-# ══════════════════════════════════════════════════════════════════════════════════
-with tab3:
-    st.markdown(f"""
-    <div style="font-size:0.72rem; color:{MUTED}; margin-bottom:14px;">
-      Rows = Items &nbsp;·&nbsp; Columns = Stores &nbsp;·&nbsp; Values = Qty Ordered
-    </div>
-    """, unsafe_allow_html=True)
-
-    mx_c1, mx_c2 = st.columns([2, 1])
-    with mx_c1:
-        matrix_loc = st.selectbox(
-            "Filter by Location",
-            ["All Locations"] + sorted(filtered['Location'].dropna().unique().tolist()),
-            key="matrix_loc"
-        )
-    matrix_df = filtered if matrix_loc == "All Locations" else filtered[filtered['Location'] == matrix_loc]
-
-    if not matrix_df.empty:
-        pivot = (
-            matrix_df.groupby(['Item Description', 'Store'])['Order Qty']
-            .sum().reset_index()
-            .pivot(index='Item Description', columns='Store', values='Order Qty')
-            .fillna(0).astype(int)
-        )
-        pivot['TOTAL'] = pivot.sum(axis=1)
-        pivot = pivot.sort_values('TOTAL', ascending=False)
-        st.dataframe(pivot, use_container_width=True, height=500)
-
-        # CSV export of matrix
-        csv_matrix = pivot.to_csv().encode('utf-8')
-        st.download_button(
-            "⬇ Export Matrix (CSV)",
-            data=csv_matrix,
-            file_name=f"STORE_MATRIX_{matrix_loc.replace(' ', '_')}.csv",
-            mime="text/csv"
-        )
-
-        # Heatmap
-        if len(pivot.columns) <= 60:
-            st.markdown(f'<div class="section-label" style="margin-top:20px;">Order Intensity Heatmap</div>',
-                        unsafe_allow_html=True)
-            stores_cols = [c for c in pivot.columns if c != 'TOTAL']
-            fig = go.Figure(go.Heatmap(
-                z=pivot[stores_cols].values,
-                x=stores_cols,
-                y=pivot.index.tolist(),
-                colorscale=[[0, DARK], [0.3, "#3A2A10"], [1, GOLD]],
-                hovertemplate='Item: %{y}<br>Store: %{x}<br>Qty: %{z}<extra></extra>',
-                showscale=True
-            ))
-            fig.update_layout(
-                **CHART_LAYOUT,
-                height=max(400, len(pivot) * 22),
-                xaxis=dict(tickangle=-45, tickfont=dict(size=9)),
-                yaxis=dict(tickfont=dict(size=9), autorange="reversed"),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No data for this selection.")
-
 
 # ══════════════════════════════════════════════════════════════════════════════════
 # TAB 4 — ALL ORDERS (Full Detail) + P2-H: Out-of-stock highlighting
@@ -2034,149 +1800,136 @@ with tab5:
             )
 
 
-# ══════════════════════════════════════════════════════════════════════════════════
-# TAB 6 — STORE SUMMARY (P2-N: Per-store order summary for delivery team)
-# ══════════════════════════════════════════════════════════════════════════════════
-with tab6:
-    st.markdown(f"""
-    <div style="margin-bottom:12px;">
-      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
-                  text-transform:uppercase; font-weight:600;">
-        Per-store order totals — useful for the delivery team
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    store_summary = (
-        filtered.groupby('Store')
-        .agg(
-            Items_Ordered  = ('Item Description', 'nunique'),
-            Total_Lines    = ('Item Description', 'count'),
-            Total_Qty      = ('Order Qty',        'sum'),
-            Total_Amount   = ('Total Amount',      'sum'),
-            Ordered_By     = ('Ordered By',        'first'),
-            Order_Date     = ('Order Date',        'first'),
-            Delivery_Date  = ('Delivery Date',     'first'),
-            OOS_Count      = ('Days to Last',      lambda x: (x == 0).sum()),
-        )
-        .reset_index()
-        .sort_values('Store')
-    )
-    store_summary.columns = [
-        'Store', 'Unique Items', 'Total Lines', 'Total Qty',
-        'Total Amount (₱)', 'Ordered By', 'Order Date', 'Delivery Date', 'Out of Stock'
-    ]
-    store_summary['Total Qty'] = store_summary['Total Qty'].apply(
-        lambda x: int(x) if pd.notna(x) else 0)
-    store_summary['Total Amount (₱)'] = store_summary['Total Amount (₱)'].map(
-        lambda x: f'{x:,.2f}' if pd.notna(x) else '—')
-
-    st.dataframe(
-        store_summary,
-        use_container_width=True, hide_index=True,
-        height=min(600, 56 + len(store_summary) * 36),
-        column_config={
-            "Out of Stock": st.column_config.NumberColumn(
-                "OOS Items",
-                help="Items where Days to Last = 0"
-            ),
-        }
-    )
-
-    # Bar chart — total amount per store
-    if not filtered.empty:
-        amt_by_store = (
-            filtered.groupby('Store')['Total Amount']
-            .sum().reset_index()
-            .sort_values('Total Amount', ascending=True)
-        )
-        if not amt_by_store.empty:
-            st.markdown(f'<div class="section-label" style="margin-top:16px;">Order Amount by Store</div>',
-                        unsafe_allow_html=True)
-            fig_store = go.Figure(go.Bar(
-                x=amt_by_store['Total Amount'],
-                y=amt_by_store['Store'],
-                orientation='h',
-                marker=dict(color=GOLD, line=dict(width=0)),
-                hovertemplate='<b>%{y}</b><br>₱%{x:,.2f}<extra></extra>'
-            ))
-            fig_store.update_layout(
-                **CHART_LAYOUT,
-                height=max(300, len(amt_by_store) * 32),
-                xaxis=dict(title="Amount (₱)", **GRID_STYLE),
-                yaxis=dict(title="", tickfont=dict(size=9)),
-            )
-            st.plotly_chart(fig_store, use_container_width=True)
-
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# TAB 7 — STORE CHECKLIST (Enhancement 2)
+# TAB 7 — STORE CHECKLIST (upload-based master list)
 # ══════════════════════════════════════════════════════════════════════════════════
 with tab7:
     st.markdown(f"""
     <div style="margin-bottom:12px;">
       <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
-        Submission status for all expected stores — check for missing PDFs
+        Upload a master store list → compare against parsed PDFs → see who's missing
       </div>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Master list uploader (persisted in session_state) ──────────────────────
+    if 'checklist_master_stores' not in st.session_state:
+        st.session_state.checklist_master_stores = []
+
+    master_file = st.file_uploader(
+        "Upload expected store list",
+        type=["csv", "xlsx", "xls"],
+        key="checklist_master_upload",
+        help="Upload a CSV or Excel file with a 'Store' column listing all stores expected to submit today"
+    )
+    st.markdown(
+        f'<div style="font-size:0.68rem; color:{MUTED}; margin-top:-8px; margin-bottom:12px;">'
+        f'Upload a CSV or Excel file with a "Store" column listing all stores expected to submit today</div>',
+        unsafe_allow_html=True
+    )
+
+    if master_file is not None:
+        try:
+            if master_file.name.lower().endswith('.csv'):
+                master_df = pd.read_csv(master_file)
+            else:
+                master_df = pd.read_excel(master_file)
+
+            # Find the Store column (case-insensitive)
+            store_col = None
+            for c in master_df.columns:
+                if c.strip().upper() == 'STORE':
+                    store_col = c
+                    break
+
+            if store_col is None:
+                st.error("**No 'Store' column found.** Make sure your file has a column named 'Store'.")
+            else:
+                master_list = master_df[store_col].dropna().astype(str).str.strip().tolist()
+                master_list = [s for s in master_list if s]  # remove blanks
+                if master_list:
+                    st.session_state.checklist_master_stores = master_list
+                    st.success(f"Loaded **{len(master_list)}** expected stores from **{master_file.name}**")
+                else:
+                    st.warning("**Store column is empty.** No store names found.")
+        except Exception as e:
+            st.error(f"Could not read file: {e}")
+
+    st.markdown("---")
+
+    # ── Checklist comparison ───────────────────────────────────────────────────
+    master_stores = st.session_state.checklist_master_stores
     loaded_stores = set(df['Store'].dropna().unique()) if not df.empty else set()
     del_date_label = sorted(df['Delivery Date'].dropna().unique())[0] if not df.empty else "—"
 
-    checklist_data = []
-    for master_store in MASTER_STORES:
-        found = master_store in loaded_stores
-        checklist_data.append({
-            'Store': master_store,
-            'Status': '✅ Received' if found else '❌ Missing',
-            'Lines': int(df[df['Store'] == master_store].shape[0]) if found else 0,
-            'Amount': f"₱{df[df['Store'] == master_store]['Total Amount'].sum():,.2f}" if found else "—",
-        })
-
-    # Also add any loaded stores NOT in master list (unexpected stores)
-    for store in sorted(loaded_stores):
-        if store not in MASTER_STORES:
+    if not master_stores:
+        st.markdown(f"""
+        <div style="padding:36px; text-align:center; color:{MUTED};
+                    border:1px dashed {BORDER}; border-radius:4px;">
+          <div style="font-size:0.8rem; letter-spacing:0.1em; text-transform:uppercase;">
+            Upload a master store list above to begin
+          </div>
+          <div style="font-size:0.72rem; margin-top:8px;">
+            The checklist will compare your expected stores against the parsed PDFs
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        checklist_data = []
+        for master_store in master_stores:
+            found = master_store in loaded_stores
             checklist_data.append({
-                'Store': store,
-                'Status': '🟡 Not in master list',
-                'Lines': int(df[df['Store'] == store].shape[0]),
-                'Amount': f"₱{df[df['Store'] == store]['Total Amount'].sum():,.2f}",
+                'Store': master_store,
+                'Status': '✅ Received' if found else '❌ Missing',
+                'Lines': int(df[df['Store'] == master_store].shape[0]) if found else 0,
+                'Amount': f"₱{df[df['Store'] == master_store]['Total Amount'].sum():,.2f}" if found else "—",
             })
 
-    checklist_df = pd.DataFrame(checklist_data)
-    received = sum(1 for r in checklist_data if '✅' in r['Status'])
-    missing  = sum(1 for r in checklist_data if '❌' in r['Status'])
+        # Also add any loaded stores NOT in master list (unexpected stores)
+        master_set = set(master_stores)
+        for store in sorted(loaded_stores):
+            if store not in master_set:
+                checklist_data.append({
+                    'Store': store,
+                    'Status': '🟡 Not in master list',
+                    'Lines': int(df[df['Store'] == store].shape[0]),
+                    'Amount': f"₱{df[df['Store'] == store]['Total Amount'].sum():,.2f}",
+                })
 
-    st.markdown(f"""
-    <div style="display:flex; gap:16px; margin-bottom:16px;">
-      <span class="info-pill">📅 Delivery: {del_date_label}</span>
-      <span class="info-pill" style="color:{GREEN};">✅ {received} received</span>
-      <span class="info-pill" style="color:{RED}; border-color:{RED};">❌ {missing} missing</span>
-      <span class="info-pill">📋 {len(MASTER_STORES)} expected</span>
-    </div>
-    """, unsafe_allow_html=True)
+        checklist_df = pd.DataFrame(checklist_data)
+        received = sum(1 for r in checklist_data if '✅' in r['Status'])
+        missing  = sum(1 for r in checklist_data if '❌' in r['Status'])
 
-    st.dataframe(
-        checklist_df,
-        use_container_width=True,
-        hide_index=True,
-        height=min(700, 56 + len(checklist_df) * 36),
-        column_config={
-            "Status": st.column_config.TextColumn("Status", width="medium"),
-        }
-    )
+        st.markdown(f"""
+        <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
+          <span class="info-pill">📅 Delivery: {del_date_label}</span>
+          <span class="info-pill" style="color:{GREEN};">✅ {received} received</span>
+          <span class="info-pill" style="color:{RED}; border-color:{RED};">❌ {missing} missing</span>
+          <span class="info-pill">📋 {len(master_stores)} expected</span>
+        </div>
+        """, unsafe_allow_html=True)
 
-    if missing > 0:
-        missing_stores = [r['Store'] for r in checklist_data if '❌' in r['Status']]
-        st.markdown(
-            f'<div style="margin-top:12px; padding:12px; background:rgba(229,57,53,0.08); '
-            f'border:1px solid rgba(229,57,53,0.3); border-radius:4px;">'
-            f'<div style="font-size:0.7rem; font-weight:600; color:{RED}; margin-bottom:6px;">'
-            f'Missing PDFs ({missing}):</div>'
-            f'<div style="font-size:0.75rem; color:{TEXT};">'
-            + " · ".join(missing_stores)
-            + '</div></div>',
-            unsafe_allow_html=True
+        st.dataframe(
+            checklist_df,
+            use_container_width=True,
+            hide_index=True,
+            height=min(700, 56 + len(checklist_df) * 36),
+            column_config={
+                "Status": st.column_config.TextColumn("Status", width="medium"),
+            }
         )
+
+        if missing > 0:
+            missing_stores = [r['Store'] for r in checklist_data if '❌' in r['Status']]
+            st.markdown(
+                f'<div style="margin-top:12px; padding:12px; background:rgba(229,57,53,0.08); '
+                f'border:1px solid rgba(229,57,53,0.3); border-radius:4px;">'
+                f'<div style="font-size:0.7rem; font-weight:600; color:{RED}; margin-bottom:6px;">'
+                f'Missing PDFs ({missing}):</div>'
+                f'<div style="font-size:0.75rem; color:{TEXT};">'
+                + " · ".join(missing_stores)
+                + '</div></div>',
+                unsafe_allow_html=True
+            )
