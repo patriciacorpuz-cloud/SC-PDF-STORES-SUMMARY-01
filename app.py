@@ -1808,12 +1808,28 @@ with tab5:
 _MASTER_SHEET_ID = "1eNFzPEpMnxi2GQupi_Ed9_owJMJllrpTzg0kVuyZtDU"
 _MASTER_SHEET_NAME = "STORE LIST"
 
-# Category headers that appear in the sheet to group stores.
-_CATEGORY_HEADERS = [
-    "FULL SERVICE STORES",
-    "TAG CONCESSIONS STORES",
-    "COFFEE SHOPS STORES",
-    "PHAT PHO STORES",
+# Prefix → display name mapping for auto-grouping stores from the flat sheet list.
+# Prefixes are checked in order; first match wins. Longer prefixes first to avoid
+# "ABC-" catching "ABC-(CS)" or "ABC-(F)" before their specific rules.
+_PREFIX_GROUP_MAP = [
+    ("ABC-(CS)",   "ABC COFFEE SHOPS"),
+    ("ABC-(F)",    "ABC FULL SERVICE"),
+    ("ABC-",       "ABC STORES"),
+    ("TCS-",       "TAG CONCESSIONS"),
+    ("PHT-",       "PHAT PHO"),
+    ("TAV-",       "TAVERNA"),
+    ("AE-",        "ABACA EATS"),
+    ("REEF-",      "REEF"),
+    ("RN1-",       "RN1 COMMISSARY"),
+    ("RN1 -",      "RN1 COMMISSARY"),
+    ("RNO-",       "RNO"),
+    ("MAYA-",      "MAYA"),
+    ("TCS ",       "TAG CONCESSIONS"),
+    ("REEF ",      "REEF"),
+    ("ADMIN",      "ADMIN / SUPPORT"),
+    ("COMMISSARY", "ADMIN / SUPPORT"),
+    ("DAVE",       "ADMIN / SUPPORT"),
+    ("RESEARCH",   "ADMIN / SUPPORT"),
 ]
 
 
@@ -1832,9 +1848,25 @@ def _get_gspread_client():
     return gspread.authorize(creds)
 
 
+def _auto_group_stores(store_names: list[str]) -> dict[str, list[str]]:
+    """Group a flat list of store names by prefix into an ordered dict."""
+    from collections import OrderedDict
+    grouped: dict[str, list[str]] = OrderedDict()
+    for name in store_names:
+        upper = name.upper()
+        matched_group = "OTHER"
+        for prefix, group_name in _PREFIX_GROUP_MAP:
+            if upper.startswith(prefix.upper()):
+                matched_group = group_name
+                break
+        grouped.setdefault(matched_group, []).append(name)
+    return grouped
+
+
 def _fetch_master_stores() -> dict[str, list[str]]:
-    """Fetch the master store list grouped by category from the private Google Sheet.
-    Returns dict like {"FULL SERVICE STORES": ["ABC-STORE1-BAR", ...], ...}.
+    """Fetch the master store list from the private Google Sheet.
+    Auto-groups stores by prefix since the sheet is a flat list.
+    Returns dict like {"ABC STORES": ["ABC-AYALA-BAR", ...], ...}.
     """
     try:
         gc = _get_gspread_client()
@@ -1842,23 +1874,14 @@ def _fetch_master_stores() -> dict[str, list[str]]:
         ws = sh.worksheet(_MASTER_SHEET_NAME)
         all_values = ws.col_values(1)  # read first column (A)
 
-        # Parse: category headers are in _CATEGORY_HEADERS, stores are rows in between
-        grouped: dict[str, list[str]] = {}
-        current_cat = None
-        for cell in all_values:
-            val = str(cell).strip()
-            if not val:
-                continue
-            upper = val.upper()
-            # Check if this row is a category header
-            if upper in (h.upper() for h in _CATEGORY_HEADERS):
-                # Use the original-case version from our constant for display
-                current_cat = next(h for h in _CATEGORY_HEADERS if h.upper() == upper)
-                grouped[current_cat] = []
-            elif current_cat is not None:
-                grouped[current_cat].append(val)
+        # Filter empty rows and strip whitespace
+        stores = [v.strip() for v in all_values if v and v.strip()]
 
-        return grouped
+        if not stores:
+            st.warning("Master store list sheet is empty.")
+            return {}
+
+        return _auto_group_stores(stores)
     except KeyError:
         st.error(
             "**Service account credentials not found.** "
