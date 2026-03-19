@@ -1346,6 +1346,108 @@ def _generate_combined_pdf(
     return bytes(pdf.output())
 
 
+def _generate_multi_allocation_pdf(
+    items_data: list[dict],
+    delivery_date: str,
+) -> bytes:
+    """Generate a combined allocation PDF for multiple items.
+    items_data: list of {item, uom, total_qty, stores: [{store, qty}]}
+    Each item gets its own section with a page break between items.
+    """
+    from fpdf import FPDF
+
+    def _safe(text: str) -> str:
+        replacements = {
+            '\u2014': '-', '\u2013': '-', '\u2018': "'", '\u2019': "'",
+            '\u201c': '"', '\u201d': '"', '\u2026': '...', '\u00a0': ' ',
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        return text.encode('latin-1', errors='replace').decode('latin-1')
+
+    class AllocPDF(FPDF):
+        def header(self):
+            if _LOGO_PATH.exists():
+                try:
+                    self.image(str(_LOGO_PATH), 10, 8, 25)
+                except Exception:
+                    pass
+            self.set_font("Helvetica", "B", 13)
+            self.cell(0, 8, "COMBINED ALLOCATION REPORT", new_x="LMARGIN", new_y="NEXT", align="R")
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(100, 100, 100)
+            self.cell(0, 5, _safe(f"Delivery Date: {delivery_date}   |   Items: {len(items_data)}"),
+                      new_x="LMARGIN", new_y="NEXT", align="R")
+            self.set_text_color(0, 0, 0)
+            self.set_draw_color(201, 169, 110)
+            self.set_line_width(0.8)
+            self.line(10, self.get_y() + 2, 200, self.get_y() + 2)
+            self.ln(6)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font("Helvetica", "I", 7)
+            self.set_text_color(160, 160, 160)
+            self.cell(0, 10, f"SC_PDF STORES SUMMARY - The Abaca Group - Page {self.page_no()}/{{nb}}", align="C")
+
+    pdf = AllocPDF(orientation="P", unit="mm", format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    for idx, item in enumerate(items_data):
+        pdf.add_page()
+
+        item_name = item["item"]
+        uom = item.get("uom", "")
+        total_qty = item.get("total_qty", 0)
+        stores = item.get("stores", [])
+
+        # Item title bar
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_fill_color(240, 235, 226)
+        pdf.set_draw_color(201, 169, 110)
+        pdf.cell(0, 9, _safe(f"  {item_name}"), new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
+        pdf.set_draw_color(0, 0, 0)
+
+        # Meta line
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(100, 100, 100)
+        pdf.cell(0, 5, _safe(f"  UOM: {uom}   |   Total Qty: {total_qty}   |   Stores: {len(stores)}"),
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(2)
+
+        # Table header
+        col_w = [120, 40]
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(26, 26, 26)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(col_w[0], 7, "  STORE", border=1, fill=True)
+        pdf.cell(col_w[1], 7, "QTY", border=1, fill=True, align="C")
+        pdf.ln()
+        pdf.set_text_color(0, 0, 0)
+
+        # Table rows
+        pdf.set_font("Helvetica", "", 9)
+        for i, s in enumerate(stores):
+            if i % 2 == 0:
+                pdf.set_fill_color(247, 245, 242)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+            pdf.cell(col_w[0], 6, _safe(f"  {s['store']}"), border=1, fill=True)
+            pdf.cell(col_w[1], 6, str(s["qty"]), border=1, fill=True, align="C")
+            pdf.ln()
+
+        # Total row
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(240, 235, 226)
+        pdf.cell(col_w[0], 7, "  TOTAL", border=1, fill=True)
+        pdf.cell(col_w[1], 7, str(total_qty), border=1, fill=True, align="C")
+        pdf.ln()
+
+    return bytes(pdf.output())
+
+
 # ─── SESSION STATE ───────────────────────────────────────────────────────────────
 if 'df' not in st.session_state:
     st.session_state.df              = pd.DataFrame()
@@ -1878,11 +1980,95 @@ with tab2:
 
     st.markdown("---")
 
-    # ── Single Item Drill-Down (Allocation Sheet) ──
-    st.markdown(f'<div class="section-label">Item Allocation — Store Breakdown</div>',
+    # ══════════════════════════════════════════════════════════════════════════
+    # Multi-Item Allocation — select multiple items for a combined report
+    # ══════════════════════════════════════════════════════════════════════════
+    st.markdown(f'<div class="section-label">Multi-Item Allocation — Combined Report</div>',
                 unsafe_allow_html=True)
+    st.markdown(
+        f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:10px;">'
+        f'Select multiple items → review store breakdowns → download one combined PDF</div>',
+        unsafe_allow_html=True,
+    )
 
     all_items = sorted(filtered['Item Description'].dropna().unique())
+
+    ma_c1, ma_c2 = st.columns([5, 1])
+    with ma_c1:
+        sel_multi_items = st.multiselect(
+            "Select items for combined report",
+            all_items,
+            key="multi_alloc_items",
+            placeholder="Click to select items…",
+        )
+    with ma_c2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("Clear", key="multi_alloc_clear", use_container_width=True):
+            st.session_state.multi_alloc_items = []
+            st.rerun()
+
+    if sel_multi_items:
+        # Build data for each selected item
+        multi_items_data = []
+        for item_name in sel_multi_items:
+            df_mi = filtered[filtered['Item Description'] == item_name]
+            store_agg = (
+                df_mi.groupby('Store')['Order Qty'].sum().reset_index().sort_values('Store')
+            )
+            total = int(store_agg['Order Qty'].sum()) if not store_agg.empty else 0
+            uom_vals = df_mi['UOM'].dropna().unique()
+            uom = uom_vals[0] if len(uom_vals) > 0 else ""
+
+            stores_list = [
+                {"store": r['Store'], "qty": int(r['Order Qty']) if pd.notna(r['Order Qty']) else 0}
+                for _, r in store_agg.iterrows()
+            ]
+            multi_items_data.append({
+                "item": item_name, "uom": uom, "total_qty": total, "stores": stores_list,
+            })
+
+        # Summary pills
+        total_items = len(sel_multi_items)
+        grand_total = sum(d["total_qty"] for d in multi_items_data)
+        st.markdown(f"""
+        <div style="display:flex; gap:12px; margin:8px 0 12px 0; flex-wrap:wrap;">
+          <span class="info-pill">📦 {total_items} item(s) selected</span>
+          <span class="info-pill">🔢 {grand_total:,} total units</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Collapsible detail per item
+        for d in multi_items_data:
+            with st.expander(
+                f"**{d['item']}** — {len(d['stores'])} stores, {d['total_qty']} {d['uom']}",
+                expanded=False,
+            ):
+                disp = pd.DataFrame(d["stores"]).rename(columns={"store": "Store", "qty": "Qty"})
+                total_row = pd.DataFrame([{"Store": "── TOTAL", "Qty": d["total_qty"]}])
+                disp = pd.concat([disp, total_row], ignore_index=True)
+                st.dataframe(
+                    disp, use_container_width=True, hide_index=True,
+                    height=min(300, 40 + len(disp) * 36),
+                )
+
+        # Download combined PDF
+        del_dates_multi = filtered['Delivery Date'].dropna().unique()
+        del_multi = del_dates_multi[0] if len(del_dates_multi) > 0 else ""
+
+        combined_alloc_pdf = _generate_multi_allocation_pdf(multi_items_data, del_multi)
+        st.download_button(
+            label=f"📄  Download Combined Allocation Report ({total_items} items)",
+            data=combined_alloc_pdf,
+            file_name=f"COMBINED_ALLOCATION_{del_multi}.pdf",
+            mime="application/pdf",
+            key="dl_multi_alloc",
+        )
+
+    st.markdown("---")
+
+    # ── Single Item Drill-Down (Allocation Sheet) ──
+    st.markdown(f'<div class="section-label">Item Allocation — Single Item Store Breakdown</div>',
+                unsafe_allow_html=True)
     sel_item  = st.selectbox("Select Item", all_items, key="alloc_item",
                               placeholder="Choose an item…")
 
