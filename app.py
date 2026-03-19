@@ -2013,30 +2013,139 @@ def _fetch_master_stores() -> dict[str, list[str]]:
         return {}
 
 
+def _check_bar_kitchen(store: str, loaded_stores: set[str]) -> tuple[bool, bool]:
+    """Check if BAR and KITCHEN PDFs exist for a given master store name.
+    Matches '[STORE]-BAR', '[STORE] BAR', '[STORE]-KITCHEN', '[STORE] KITCHEN'
+    (case-insensitive) against the set of parsed store names.
+    """
+    store_upper = store.upper()
+    bar_found = False
+    kitchen_found = False
+    for ls in loaded_stores:
+        ls_upper = ls.upper()
+        # BAR match: "STORE-BAR" or "STORE BAR"
+        if ls_upper == f"{store_upper}-BAR" or ls_upper == f"{store_upper} BAR":
+            bar_found = True
+        # KITCHEN match: "STORE-KITCHEN" or "STORE KITCHEN"
+        if ls_upper == f"{store_upper}-KITCHEN" or ls_upper == f"{store_upper} KITCHEN":
+            kitchen_found = True
+        if bar_found and kitchen_found:
+            break
+    return bar_found, kitchen_found
+
+
+def _is_rn1_store(store: str) -> bool:
+    """RN1 stores only submit one PDF (no BAR/KITCHEN split)."""
+    return store.upper().startswith("RN1")
+
+
+def _check_rn1_submitted(store: str, loaded_stores: set[str]) -> bool:
+    """For RN1 stores, check if any PDF matching the store name was parsed."""
+    store_upper = store.upper()
+    for ls in loaded_stores:
+        if ls.upper() == store_upper or ls.upper().startswith(store_upper):
+            return True
+    return False
+
+
 def _render_store_group(title: str, stores: list[str], loaded_stores: set[str]):
-    """Render a single category block: gold header + store rows with check icons."""
-    # Category header
-    st.markdown(
-        f'<div style="background:rgba(201,169,110,0.18); border:1px solid {GOLD}; '
-        f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
-        f'font-size:0.72rem; font-weight:700; letter-spacing:0.1em; '
-        f'text-transform:uppercase; color:{GOLD};">{title}</div>',
-        unsafe_allow_html=True,
-    )
+    """Render a category block with BAR / KITCHEN status columns."""
+    # Category header — columns: Name | BAR | KITCHEN (or SUBMITTED for RN1)
+    is_rn1_group = all(_is_rn1_store(s) for s in stores) if stores else False
+
+    if is_rn1_group:
+        col_header = (
+            f'<div style="display:flex; align-items:center; gap:0; '
+            f'background:rgba(201,169,110,0.18); border:1px solid {GOLD}; '
+            f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
+            f'font-size:0.68rem; font-weight:700; letter-spacing:0.1em; '
+            f'text-transform:uppercase; color:{GOLD};">'
+            f'<span style="flex:3;">{title}</span>'
+            f'<span style="flex:1; text-align:center;">SUBMITTED</span>'
+            f'</div>'
+        )
+    else:
+        col_header = (
+            f'<div style="display:flex; align-items:center; gap:0; '
+            f'background:rgba(201,169,110,0.18); border:1px solid {GOLD}; '
+            f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
+            f'font-size:0.68rem; font-weight:700; letter-spacing:0.1em; '
+            f'text-transform:uppercase; color:{GOLD};">'
+            f'<span style="flex:3;">{title}</span>'
+            f'<span style="flex:1; text-align:center;">BAR</span>'
+            f'<span style="flex:1; text-align:center;">KITCHEN</span>'
+            f'</div>'
+        )
+    st.markdown(col_header, unsafe_allow_html=True)
+
     # Store rows
     for store in stores:
-        found = store in loaded_stores
-        icon = "✅" if found else "☐"
-        name_color = TEXT if found else MUTED
-        st.markdown(
-            f'<div style="display:flex; align-items:center; gap:8px; '
-            f'padding:4px 12px; border-bottom:1px solid {BORDER}; '
-            f'font-size:0.78rem; color:{name_color};">'
-            f'<span style="font-size:0.85rem;">{icon}</span>'
-            f'<span>{store}</span>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+        if _is_rn1_store(store):
+            submitted = _check_rn1_submitted(store, loaded_stores)
+            icon = "✅" if submitted else "❌"
+            name_color = TEXT if submitted else MUTED
+            st.markdown(
+                f'<div style="display:flex; align-items:center; gap:0; '
+                f'padding:4px 12px; border-bottom:1px solid {BORDER}; '
+                f'font-size:0.78rem; color:{name_color};">'
+                f'<span style="flex:3;">{store}</span>'
+                f'<span style="flex:1; text-align:center; font-size:0.85rem;">{icon}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            bar_ok, kit_ok = _check_bar_kitchen(store, loaded_stores)
+            bar_icon = "✅" if bar_ok else "❌"
+            kit_icon = "✅" if kit_ok else "❌"
+            both_ok = bar_ok and kit_ok
+            name_color = TEXT if both_ok else MUTED
+            st.markdown(
+                f'<div style="display:flex; align-items:center; gap:0; '
+                f'padding:4px 12px; border-bottom:1px solid {BORDER}; '
+                f'font-size:0.78rem; color:{name_color};">'
+                f'<span style="flex:3;">{store}</span>'
+                f'<span style="flex:1; text-align:center; font-size:0.85rem;">{bar_icon}</span>'
+                f'<span style="flex:1; text-align:center; font-size:0.85rem;">{kit_icon}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+
+def _compute_checklist_summary(groups: dict[str, list[str]], loaded_stores: set[str]) -> tuple[int, int]:
+    """Return (fully_complete_count, total_stores) across all groups.
+    A non-RN1 store is 'complete' when both BAR and KITCHEN are received.
+    An RN1 store is 'complete' when its single PDF is received.
+    """
+    complete = 0
+    total = 0
+    for stores in groups.values():
+        for store in stores:
+            total += 1
+            if _is_rn1_store(store):
+                if _check_rn1_submitted(store, loaded_stores):
+                    complete += 1
+            else:
+                bar_ok, kit_ok = _check_bar_kitchen(store, loaded_stores)
+                if bar_ok and kit_ok:
+                    complete += 1
+    return complete, total
+
+
+def _all_expected_pdf_names(groups: dict[str, list[str]]) -> set[str]:
+    """Build a set of all expected parsed store names (uppercase) for unrecognized-store detection.
+    Non-RN1 stores expect STORE-BAR and STORE-KITCHEN; RN1 stores expect the store name itself.
+    """
+    expected = set()
+    for stores in groups.values():
+        for store in stores:
+            if _is_rn1_store(store):
+                expected.add(store.upper())
+            else:
+                expected.add(f"{store.upper()}-BAR")
+                expected.add(f"{store.upper()} BAR")
+                expected.add(f"{store.upper()}-KITCHEN")
+                expected.add(f"{store.upper()} KITCHEN")
+    return expected
 
 
 with tab7:
@@ -2098,8 +2207,7 @@ with tab7:
     else:
         all_master = [s for stores in groups.values() for s in stores]
         master_set = set(all_master)
-        received = sum(1 for s in all_master if s in loaded_stores)
-        total_expected = len(all_master)
+        complete_count, total_expected = _compute_checklist_summary(groups, loaded_stores)
 
         # Date header
         st.markdown(
@@ -2109,20 +2217,21 @@ with tab7:
         )
 
         # Summary pills
+        summary_color = GREEN if complete_count == total_expected else GOLD
         st.markdown(f"""
         <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
-          <span class="info-pill" style="color:{GREEN};">✅ {received} received</span>
-          <span class="info-pill" style="color:{RED}; border-color:{RED};">☐ {total_expected - received} pending</span>
-          <span class="info-pill">📋 {total_expected} expected</span>
+          <span class="info-pill" style="color:{summary_color};">
+            ✅ {complete_count} of {total_expected} stores fully complete
+            (both BAR and KITCHEN received)
+          </span>
+          <span class="info-pill" style="color:{RED}; border-color:{RED};">
+            ❌ {total_expected - complete_count} incomplete
+          </span>
         </div>
         """, unsafe_allow_html=True)
 
-        # ── 2-column grid matching the screenshot layout ──────────────────────
-        # Row 1: Full Service (left) | Tag Concessions (right)
-        # Row 2: Coffee Shops (left) | Phat Pho (right)
+        # ── 2-column grid grouped by prefix ───────────────────────────────────
         cat_list = list(groups.keys())
-
-        # Build pairs: (left, right) for each row
         pairs = []
         for i in range(0, len(cat_list), 2):
             left = cat_list[i] if i < len(cat_list) else None
@@ -2140,7 +2249,12 @@ with tab7:
             st.markdown("<br>", unsafe_allow_html=True)
 
         # ── Unrecognized Stores ───────────────────────────────────────────────
-        unrecognized = sorted(loaded_stores - master_set)
+        # A loaded store is "unrecognized" if it doesn't match any expected PDF name
+        expected_names = _all_expected_pdf_names(groups)
+        unrecognized = sorted(
+            s for s in loaded_stores
+            if s.upper() not in expected_names
+        )
         if unrecognized:
             st.markdown("---")
             st.markdown(
