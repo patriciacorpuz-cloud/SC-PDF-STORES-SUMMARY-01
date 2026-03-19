@@ -215,6 +215,25 @@ def clean_store_name(raw_name: str) -> str:
     return n
 
 
+def _normalize_store(name: str) -> str:
+    """Normalize a store name for matching between master list and parsed PDFs.
+    Strips: type codes -(CS)/(F), trailing suffixes (CS 2)/(FS)/(1), date remnants.
+    'ABC-(CS) CYBER' → 'ABC-CYBER', 'ABC-(F) TGU-BAR (FS)' → 'ABC-TGU-BAR'.
+    """
+    n = name.upper().strip()
+    # Strip date suffix and everything after: ' - MM_DD_YY...'
+    n = re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}.*$', '', n).strip()
+    # Strip trailing parenthetical suffixes: (CS 2), (CS 1), (FS), (F), (1), etc.
+    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
+    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
+    # Remove -(XX) type codes from master list names: "-(CS) " or "-(F) "
+    n = re.sub(r'-\([A-Z]+\)\s*', '-', n)
+    # Collapse double dashes and normalize whitespace
+    n = re.sub(r'-{2,}', '-', n)
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+
 def extract_store_name(text: str) -> str:
     match = re.search(
         r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(.+?)\s+LATEST TIME EDITED',
@@ -2724,25 +2743,6 @@ def _fetch_master_stores() -> dict[str, list[str]]:
     except Exception as e:
         st.error(f"**Failed to fetch master store list:** {e}")
         return {}
-
-
-def _normalize_store(name: str) -> str:
-    """Normalize a store name for matching between master list and parsed PDFs.
-    Strips: type codes -(CS)/(F), trailing suffixes (CS 2)/(FS)/(1), date remnants.
-    'ABC-(CS) CYBER' → 'ABC-CYBER', 'ABC-(F) TGU-BAR (FS)' → 'ABC-TGU-BAR'.
-    """
-    n = name.upper().strip()
-    # Strip date suffix and everything after: ' - MM_DD_YY...'
-    n = re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}.*$', '', n).strip()
-    # Strip trailing parenthetical suffixes: (CS 2), (CS 1), (FS), (F), (1), etc.
-    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
-    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
-    # Remove -(XX) type codes from master list names: "-(CS) " or "-(F) "
-    n = re.sub(r'-\([A-Z]+\)\s*', '-', n)
-    # Collapse double dashes and normalize whitespace
-    n = re.sub(r'-{2,}', '-', n)
-    n = re.sub(r'\s+', ' ', n).strip()
-    return n
 
 
 def _check_bar_kitchen(store: str, loaded_stores: set[str]) -> tuple[bool, bool]:
