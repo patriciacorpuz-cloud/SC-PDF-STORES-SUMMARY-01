@@ -525,47 +525,175 @@ def clean_numeric(series: pd.Series) -> pd.Series:
 def download_from_gdrive(url: str) -> list[tuple[str, bytes]]:
     """Enhancement 1: Download PDFs from a Google Drive link (file or folder).
     Returns list of (filename, bytes) tuples.
+    Shows progress bar and detailed status messages.
     """
     try:
         import gdown
     except ImportError:
-        st.error("gdown is not installed. Add `gdown` to requirements.txt.")
+        st.error(
+            "**gdown is not installed.** Add `gdown>=5.1.0` to requirements.txt "
+            "and redeploy, or run `pip install gdown`."
+        )
         return []
 
     files = []
     tmp_dir = tempfile.mkdtemp()
 
-    try:
-        # Detect folder link
-        folder_match = re.search(r'folders/([a-zA-Z0-9_-]+)', url)
-        file_match = re.search(r'(?:file/d/|id=)([a-zA-Z0-9_-]+)', url)
+    # Detect folder vs file link
+    folder_match = re.search(r'folders/([a-zA-Z0-9_-]+)', url)
+    file_match = re.search(r'(?:file/d/|id=)([a-zA-Z0-9_-]+)', url)
 
+    if not folder_match and not file_match:
+        st.error(
+            "**Could not parse Google Drive URL.** Supported formats:\n"
+            "- `https://drive.google.com/drive/folders/FOLDER_ID`\n"
+            "- `https://drive.google.com/file/d/FILE_ID/view`\n"
+            "- `https://drive.google.com/open?id=FILE_ID`"
+        )
+        return []
+
+    progress = st.progress(0, text="Connecting to Google Drive…")
+
+    try:
         if folder_match:
+            # ── Folder download ──────────────────────────────────────────
             folder_id = folder_match.group(1)
-            folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
-            gdown.download_folder(folder_url, output=tmp_dir, quiet=True)
+            progress.progress(5, text="Listing folder contents…")
+
+            # First pass: list files without downloading to get count
+            try:
+                file_list = gdown.download_folder(
+                    id=folder_id,
+                    output=tmp_dir,
+                    quiet=True,
+                    skip_download=True,  # just list, don't download yet
+                )
+            except Exception as e:
+                progress.empty()
+                st.error(
+                    f"**Could not access folder.** Make sure sharing is set to "
+                    f"'Anyone with the link can view'.\n\nError: {e}"
+                )
+                return []
+
+            if not file_list:
+                progress.empty()
+                st.warning("**Folder is empty or not accessible.** Check sharing permissions.")
+                return []
+
+            # Filter to PDFs only (file_list items have .path attribute in skip_download mode)
+            pdf_entries = [
+                f for f in file_list
+                if str(getattr(f, 'path', getattr(f, 'local_path', str(f))) or '').lower().endswith('.pdf')
+                or str(getattr(f, 'name', str(f)) or '').lower().endswith('.pdf')
+            ]
+
+            if not pdf_entries:
+                # Fall back: download everything and filter after
+                pdf_entries = file_list
+
+            total = len(pdf_entries)
+            progress.progress(10, text=f"Found {total} file(s) — downloading…")
+
+            # Second pass: actually download
+            try:
+                downloaded_paths = gdown.download_folder(
+                    id=folder_id,
+                    output=tmp_dir,
+                    quiet=True,
+                    skip_download=False,
+                )
+            except Exception as e:
+                progress.empty()
+                st.error(f"**Download failed.** {e}")
+                return []
+
             # Collect all PDFs from downloaded folder
+            pdf_files_on_disk = []
             for root, _dirs, filenames in os.walk(tmp_dir):
                 for fname in filenames:
                     if fname.lower().endswith('.pdf'):
-                        fpath = os.path.join(root, fname)
-                        with open(fpath, 'rb') as f:
-                            files.append((fname, f.read()))
-        elif file_match:
-            file_id = file_match.group(1)
-            dl_url = f"https://drive.google.com/uc?id={file_id}"
-            output_path = os.path.join(tmp_dir, "downloaded.pdf")
-            gdown.download(dl_url, output_path, quiet=True)
-            if os.path.exists(output_path):
-                # Try to get real filename from content
-                fname = "downloaded.pdf"
-                with open(output_path, 'rb') as f:
-                    files.append((fname, f.read()))
-        else:
-            st.warning("Could not parse Google Drive URL. Use a file or folder link.")
-    except Exception as e:
-        st.error(f"Google Drive download failed: {e}")
+                        pdf_files_on_disk.append((fname, os.path.join(root, fname)))
 
+            if not pdf_files_on_disk:
+                progress.empty()
+                st.warning("**No PDF files found in folder.** The folder may contain other file types.")
+                return []
+
+            total_pdfs = len(pdf_files_on_disk)
+            for i, (fname, fpath) in enumerate(pdf_files_on_disk):
+                progress.progress(
+                    10 + int(90 * (i + 1) / total_pdfs),
+                    text=f"Reading {i+1} of {total_pdfs}: {fname}"
+                )
+                try:
+                    with open(fpath, 'rb') as f:
+                        data = f.read()
+                    if len(data) > 0:
+                        files.append((fname, data))
+                    else:
+                        st.warning(f"Skipped empty file: **{fname}**")
+                except Exception as e:
+                    st.warning(f"Could not read **{fname}**: {e}")
+
+        else:
+            # ── Single file download ─────────────────────────────────────
+            file_id = file_match.group(1)
+            progress.progress(10, text="Downloading file…")
+
+            # Use fuzzy=True so gdown can handle various Drive URL formats,
+            # and pass the original URL so gdown can extract the real filename.
+            output_path = os.path.join(tmp_dir, "download.pdf")
+            try:
+                result = gdown.download(
+                    id=file_id,
+                    output=output_path,
+                    quiet=True,
+                    fuzzy=False,
+                )
+            except Exception as e:
+                progress.empty()
+                st.error(
+                    f"**Download failed.** Make sure the file is set to "
+                    f"'Anyone with the link can view'.\n\nError: {e}"
+                )
+                return []
+
+            if result is None or not os.path.exists(output_path):
+                progress.empty()
+                st.error(
+                    "**File not accessible.** Make sure:\n"
+                    "1. Sharing is set to 'Anyone with the link can view'\n"
+                    "2. The link is a valid Google Drive file link\n"
+                    "3. The file has not been deleted"
+                )
+                return []
+
+            progress.progress(80, text="Reading downloaded file…")
+
+            # Use the actual filename gdown saved (it often renames to the real name)
+            actual_path = result if isinstance(result, str) and os.path.exists(result) else output_path
+            fname = os.path.basename(actual_path)
+            # Ensure it has .pdf extension
+            if not fname.lower().endswith('.pdf'):
+                fname = fname + '.pdf'
+
+            with open(actual_path, 'rb') as f:
+                data = f.read()
+
+            if len(data) == 0:
+                progress.empty()
+                st.error("**Downloaded file is empty.** The file may be corrupted or inaccessible.")
+                return []
+
+            files.append((fname, data))
+
+    except Exception as e:
+        progress.empty()
+        st.error(f"**Google Drive download failed:** {e}")
+        return []
+
+    progress.progress(100, text=f"✓ Downloaded {len(files)} PDF(s) — parsing now…")
     return files
 
 
@@ -1029,10 +1157,9 @@ with st.sidebar:
             help="Files must be set to 'Anyone with the link can view'"
         )
         if gdrive_url and st.button("📥  Download from Drive", use_container_width=True):
-            with st.spinner("Downloading from Google Drive…"):
-                pdf_file_list = download_from_gdrive(gdrive_url)
+            pdf_file_list = download_from_gdrive(gdrive_url)
             if pdf_file_list:
-                st.success(f"Downloaded {len(pdf_file_list)} PDF(s)")
+                st.success(f"✓ Downloaded {len(pdf_file_list)} PDF(s)")
     else:
         uploaded_files = st.file_uploader(
             "Upload PDF Orders",
