@@ -2098,65 +2098,56 @@ with tab5:
     st.markdown("---")
 
     # ══════════════════════════════════════════════════════════════════════════════
-    # Section 2: ITEMS NOT AVAILABLE TODAY (grouped by item, auto-fills stores)
+    # Section 2: ITEMS NOT AVAILABLE TODAY (instant-add, grouped by item)
     # ══════════════════════════════════════════════════════════════════════════════
     st.markdown(f'<div class="section-label">Items Not Available Today</div>', unsafe_allow_html=True)
     st.markdown(
         f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:12px;">'
-        f'Select items that are unavailable — stores and quantities are auto-filled from PDF data. '
-        f'Use this to generate the Allocation Guide PDF.</div>',
+        f'Select items one by one — they are instantly added to the list below. '
+        f'Add remarks inline after adding. Generate the Allocation Guide PDF when ready.</div>',
         unsafe_allow_html=True,
     )
 
-    # Item selector
-    na_c1, na_c2, na_c3 = st.columns([3, 3, 1])
-    with na_c1:
-        all_items_na = sorted(filtered['Item Description'].dropna().unique()) if not filtered.empty else []
-        sel_na_item = st.selectbox(
-            "Select unavailable item",
-            ["— select item —"] + all_items_na,
-            key="na_item_sel",
-        )
-    with na_c2:
-        na_remark = st.text_input(
-            "Remark for this item",
-            placeholder="e.g. AVAILABLE TOMORROW, OUT OF STOCK",
-            key="na_remark",
-        )
-    with na_c3:
-        st.markdown("<br>", unsafe_allow_html=True)
-        na_add = st.button("➕  Add Item", key="na_add_btn", use_container_width=True)
+    # Build the options list excluding already-added items
+    existing_na_items = {e["item"] for e in st.session_state.unavailable_items}
+    all_items_na = sorted(filtered['Item Description'].dropna().unique()) if not filtered.empty else []
+    available_na_options = [it for it in all_items_na if it not in existing_na_items]
 
-    if na_add:
-        if sel_na_item == "— select item —":
-            st.warning("Please select an item first.")
-        else:
-            # Check for duplicate
-            existing_items = {e["item"] for e in st.session_state.unavailable_items}
-            if sel_na_item in existing_items:
-                st.warning(f"**{sel_na_item}** is already in the list.")
-            else:
-                # Auto-fill stores + qty + UOM from parsed data
-                item_data = filtered[filtered['Item Description'] == sel_na_item]
-                store_rows = []
-                for store_name in sorted(item_data['Store'].dropna().unique()):
-                    store_mask = item_data['Store'] == store_name
-                    qty = item_data.loc[store_mask, 'Order Qty'].sum()
-                    qty = int(qty) if pd.notna(qty) and qty > 0 else 1
-                    uom_vals = item_data.loc[store_mask, 'UOM'].dropna().unique()
-                    uom = uom_vals[0] if len(uom_vals) > 0 else ""
-                    store_rows.append({"store": store_name, "qty": qty, "uom": uom})
+    # Instant-add selectbox: selecting any item immediately adds it
+    sel_na_item = st.selectbox(
+        "Select unavailable item (instant add)",
+        [""] + available_na_options,
+        format_func=lambda x: "— click to select an item —" if x == "" else x,
+        key="na_item_sel",
+    )
 
-                st.session_state.unavailable_items.append({
-                    "item": sel_na_item,
-                    "remarks": na_remark.strip().upper() if na_remark else "",
-                    "stores": store_rows,
-                })
-                st.success(f"Added **{sel_na_item}** — {len(store_rows)} store(s) affected.")
-                st.rerun()
+    # When a non-empty item is selected, instantly add it and rerun
+    if sel_na_item and sel_na_item != "":
+        item_data = filtered[filtered['Item Description'] == sel_na_item]
+        store_rows = []
+        for store_name in sorted(item_data['Store'].dropna().unique()):
+            store_mask = item_data['Store'] == store_name
+            qty = item_data.loc[store_mask, 'Order Qty'].sum()
+            qty = int(qty) if pd.notna(qty) and qty > 0 else 1
+            uom_vals = item_data.loc[store_mask, 'UOM'].dropna().unique()
+            uom = uom_vals[0] if len(uom_vals) > 0 else ""
+            store_rows.append({"store": store_name, "qty": qty, "uom": uom})
+
+        st.session_state.unavailable_items.append({
+            "item": sel_na_item,
+            "remarks": "",
+            "stores": store_rows,
+        })
+        st.rerun()
 
     # Display current unavailable items list
     if st.session_state.unavailable_items:
+        st.markdown(
+            f'<div class="section-label" style="margin-top:12px;">'
+            f'{len(st.session_state.unavailable_items)} item(s) marked unavailable</div>',
+            unsafe_allow_html=True,
+        )
+
         for idx, entry in enumerate(st.session_state.unavailable_items):
             item_name = entry["item"]
             remarks = entry.get("remarks", "")
@@ -2165,7 +2156,7 @@ with tab5:
 
             with st.expander(
                 f"**{item_name}** — {len(stores)} stores, {total_qty} units"
-                + (f"  ·  {remarks}" if remarks else ""),
+                + (f"  ·  _{remarks}_" if remarks else ""),
                 expanded=False,
             ):
                 if stores:
@@ -2175,7 +2166,17 @@ with tab5:
                         hide_index=True,
                         height=min(250, 40 + len(stores) * 36),
                     )
-                if st.button(f"🗑 Remove", key=f"na_remove_{idx}"):
+                # Inline remark field — editable per item
+                new_remark = st.text_input(
+                    "Remarks",
+                    value=remarks,
+                    placeholder="e.g. AVAILABLE TOMORROW, OUT OF STOCK",
+                    key=f"na_remark_{idx}",
+                )
+                if new_remark != remarks:
+                    st.session_state.unavailable_items[idx]["remarks"] = new_remark.strip().upper()
+
+                if st.button("🗑 Remove", key=f"na_remove_{idx}"):
                     st.session_state.unavailable_items.pop(idx)
                     st.rerun()
 
