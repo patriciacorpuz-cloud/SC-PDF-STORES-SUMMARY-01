@@ -913,6 +913,161 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
 </html>"""
 
 
+# ─── GOOGLE DRIVE DOWNLOAD ────────────────────────────────────────────────────
+import tempfile
+
+def _parse_drive_link(url: str) -> tuple[str, str]:
+    """Parse a Google Drive URL and return (link_type, id).
+    link_type is 'folder', 'file', or 'unknown'.
+    """
+    url = url.strip()
+    # Folder link: https://drive.google.com/drive/folders/FOLDER_ID...
+    m = re.search(r'drive\.google\.com/drive/folders/([A-Za-z0-9_-]+)', url)
+    if m:
+        return 'folder', m.group(1)
+    # File link: https://drive.google.com/file/d/FILE_ID/...
+    m = re.search(r'drive\.google\.com/file/d/([A-Za-z0-9_-]+)', url)
+    if m:
+        return 'file', m.group(1)
+    # Open link: https://drive.google.com/open?id=FILE_ID
+    m = re.search(r'drive\.google\.com/open\?id=([A-Za-z0-9_-]+)', url)
+    if m:
+        return 'file', m.group(1)
+    # Fallback: try to extract any long alphanumeric ID
+    m = re.search(r'/d/([A-Za-z0-9_-]{20,})/', url)
+    if m:
+        return 'file', m.group(1)
+    return 'unknown', ''
+
+
+def _download_from_drive(url: str) -> list[tuple[str, bytes]]:
+    """Download PDFs from a Google Drive link (folder or single file).
+    Returns list of (filename, bytes) tuples.
+    Shows progress in the Streamlit sidebar.
+    """
+    import gdown
+
+    link_type, drive_id = _parse_drive_link(url)
+
+    if link_type == 'unknown' or not drive_id:
+        st.error(
+            "**Could not parse Drive link.** "
+            "Make sure you paste the full URL from Google Drive "
+            "(folder or file share link)."
+        )
+        return []
+
+    results = []  # (name, bytes)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if link_type == 'folder':
+            # Download entire folder
+            status = st.empty()
+            status.info("Scanning Google Drive folder…")
+            try:
+                downloaded = gdown.download_folder(
+                    id=drive_id,
+                    output=tmpdir,
+                    quiet=True,
+                    remaining_ok=True,
+                )
+            except Exception as e:
+                status.empty()
+                err_msg = str(e)
+                if "access" in err_msg.lower() or "404" in err_msg or "403" in err_msg:
+                    st.error(
+                        "**Could not access folder** — make sure sharing is set to "
+                        "**Anyone with the link can view**."
+                    )
+                else:
+                    st.error(f"**Drive download failed:** {e}")
+                return []
+            status.empty()
+
+            if not downloaded:
+                st.warning("**No files found** in the Drive folder, or folder is not accessible.")
+                return []
+
+            # Collect all PDFs from the downloaded folder (may be nested)
+            pdf_paths = list(Path(tmpdir).rglob("*.pdf")) + list(Path(tmpdir).rglob("*.PDF"))
+            # Deduplicate
+            seen_names = set()
+            unique_pdfs = []
+            for p in pdf_paths:
+                if p.name.lower() not in seen_names:
+                    seen_names.add(p.name.lower())
+                    unique_pdfs.append(p)
+            pdf_paths = unique_pdfs
+
+            if not pdf_paths:
+                st.warning("**No PDF files found** in the Drive folder.")
+                return []
+
+            progress = st.progress(0, text=f"Downloading 0 of {len(pdf_paths)} files…")
+            for i, p in enumerate(pdf_paths):
+                try:
+                    results.append((p.name, p.read_bytes()))
+                except Exception as e:
+                    st.warning(f"Could not read **{p.name}**: {e}")
+                progress.progress(
+                    (i + 1) / len(pdf_paths),
+                    text=f"Downloading {i + 1} of {len(pdf_paths)} files…"
+                )
+            progress.empty()
+            st.success(f"✓ Downloaded **{len(results)} PDF(s)** — parsing now…")
+
+        else:
+            # Single file download
+            status = st.empty()
+            status.info("Downloading file from Google Drive…")
+            out_path = os.path.join(tmpdir, "download.pdf")
+            try:
+                result_path = gdown.download(
+                    id=drive_id,
+                    output=out_path,
+                    quiet=True,
+                    fuzzy=False,
+                )
+            except Exception as e:
+                status.empty()
+                err_msg = str(e)
+                if "access" in err_msg.lower() or "404" in err_msg or "403" in err_msg:
+                    st.error(
+                        "**Could not access file** — make sure sharing is set to "
+                        "**Anyone with the link can view**."
+                    )
+                else:
+                    st.error(f"**Drive download failed:** {e}")
+                return []
+            status.empty()
+
+            if not result_path or not os.path.exists(result_path):
+                st.error(
+                    "**Download failed** — file may not be accessible. "
+                    "Make sure sharing is set to **Anyone with the link can view**."
+                )
+                return []
+
+            # Check it's actually a PDF (Drive might return an HTML error page)
+            file_bytes = Path(result_path).read_bytes()
+            if not file_bytes[:5].startswith(b'%PDF'):
+                st.error(
+                    "**Downloaded file is not a valid PDF** — "
+                    "the file may be restricted. Make sure sharing is set to "
+                    "**Anyone with the link can view**."
+                )
+                return []
+
+            # Try to get original filename from content-disposition or use generic
+            fname = Path(result_path).name
+            if fname == "download.pdf":
+                fname = f"drive_file_{drive_id[:8]}.pdf"
+            results.append((fname, file_bytes))
+            st.success(f"✓ Downloaded **1 PDF** — parsing now…")
+
+    return results
+
+
 # ─── SESSION STATE ───────────────────────────────────────────────────────────────
 if 'df' not in st.session_state:
     st.session_state.df              = pd.DataFrame()
@@ -938,67 +1093,31 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── PDF Input Options ─────────────────────────────────────────────────────
+    # ── PDF Input — Google Drive Link ────────────────────────────────────────
     st.markdown(
         f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
-        f'text-transform:uppercase; color:{GOLD}; margin-bottom:8px;">Option 1: Load from local folder</div>',
+        f'text-transform:uppercase; color:{GOLD}; margin-bottom:8px;">'
+        f'Load PDFs from Google Drive</div>',
         unsafe_allow_html=True
     )
-    folder_path = st.text_input(
-        "Local folder path",
-        placeholder="/Users/you/Downloads/picklists",
-        help="Paste the full path to a folder containing PDF order files",
-        label_visibility="collapsed"
+    drive_link = st.text_input(
+        "Google Drive link",
+        placeholder="https://drive.google.com/drive/folders/...",
+        help="Paste a Google Drive folder or single file link",
+        label_visibility="collapsed",
+        key="drive_link_input",
     )
-    fc1, fc2 = st.columns([1, 1])
-    with fc1:
-        scan_clicked = st.button("📂  Scan Folder", use_container_width=True, key="scan_folder")
-    with fc2:
-        refresh_clicked = st.button("🔄  Refresh", use_container_width=True, key="refresh_folder")
+    st.markdown(
+        f'<div style="font-size:0.62rem; color:{MUTED}; margin-top:-8px; margin-bottom:8px;">'
+        f'PDFs must be shared as <b>Anyone with the link can view</b> from your personal Google Drive</div>',
+        unsafe_allow_html=True,
+    )
+    load_drive = st.button("📥  Load from Drive", use_container_width=True, key="load_drive_btn")
 
     pdf_file_list = []  # list of (name, bytes)
 
-    if folder_path and (scan_clicked or refresh_clicked):
-        folder = Path(folder_path)
-        if not folder.exists():
-            st.error(f"**Folder not found:** `{folder_path}`")
-        elif not folder.is_dir():
-            st.error(f"**Not a folder:** `{folder_path}`")
-        else:
-            pdf_paths = sorted(folder.glob("*.pdf")) + sorted(folder.glob("*.PDF"))
-            # Deduplicate (case-insensitive filesystems may return same file twice)
-            seen = set()
-            unique_paths = []
-            for p in pdf_paths:
-                if p.name not in seen:
-                    seen.add(p.name)
-                    unique_paths.append(p)
-            pdf_paths = unique_paths
-
-            if not pdf_paths:
-                st.warning(f"**No PDF files found** in `{folder_path}`")
-            else:
-                st.success(f"Found **{len(pdf_paths)} PDF(s)** in folder")
-                for p in pdf_paths:
-                    try:
-                        pdf_file_list.append((p.name, p.read_bytes()))
-                    except Exception as e:
-                        st.warning(f"Could not read **{p.name}**: {e}")
-
-    st.markdown("---")
-    st.markdown(
-        f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
-        f'text-transform:uppercase; color:{GOLD}; margin-bottom:8px;">Option 2: Upload files manually</div>',
-        unsafe_allow_html=True
-    )
-    uploaded_files = st.file_uploader(
-        "Upload PDF Orders",
-        type="pdf",
-        accept_multiple_files=True,
-        help="Drop all store PDFs here — supports 100+ at once"
-    )
-    if uploaded_files:
-        pdf_file_list = [(f.name, f.read()) for f in uploaded_files]
+    if drive_link and load_drive:
+        pdf_file_list = _download_from_drive(drive_link)
 
     if pdf_file_list:
         new_names = {n for n, _ in pdf_file_list}
