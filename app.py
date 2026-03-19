@@ -1802,45 +1802,99 @@ with tab5:
 
 
 # ══════════════════════════════════════════════════════════════════════════════════
-# TAB 7 — STORE CHECKLIST (Google Sheets master list)
+# TAB 7 — STORE CHECKLIST (private Google Sheet via service account)
 # ══════════════════════════════════════════════════════════════════════════════════
 
-# Google Sheet ID for the master store list.
-# Replace with your actual Sheet ID (the long string between /d/ and /edit in the URL).
-_MASTER_SHEET_ID = "YOUR_SHEET_ID_HERE"
-_MASTER_SHEET_CSV_URL = f"https://docs.google.com/spreadsheets/d/{_MASTER_SHEET_ID}/export?format=csv"
+_MASTER_SHEET_ID = "1eNFzPEpMnxi2GQupi_Ed9_owJMJllrpTzg0kVuyZtDU"
+_MASTER_SHEET_NAME = "STORE LIST"
+
+# Category headers that appear in the sheet to group stores.
+_CATEGORY_HEADERS = [
+    "FULL SERVICE STORES",
+    "TAG CONCESSIONS STORES",
+    "COFFEE SHOPS STORES",
+    "PHAT PHO STORES",
+]
 
 
-def _fetch_master_stores_from_sheet() -> list[str]:
-    """Fetch the master store list from a published Google Sheet (CSV export)."""
-    import requests
+def _get_gspread_client():
+    """Build a gspread client from Streamlit secrets (service account JSON)."""
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets.readonly",
+    ]
+    creds = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scopes,
+    )
+    return gspread.authorize(creds)
+
+
+def _fetch_master_stores() -> dict[str, list[str]]:
+    """Fetch the master store list grouped by category from the private Google Sheet.
+    Returns dict like {"FULL SERVICE STORES": ["ABC-STORE1-BAR", ...], ...}.
+    """
     try:
-        resp = requests.get(_MASTER_SHEET_CSV_URL, timeout=15)
-        resp.raise_for_status()
-        master_df = pd.read_csv(io.StringIO(resp.text))
+        gc = _get_gspread_client()
+        sh = gc.open_by_key(_MASTER_SHEET_ID)
+        ws = sh.worksheet(_MASTER_SHEET_NAME)
+        all_values = ws.col_values(1)  # read first column (A)
 
-        # Find the Store column (case-insensitive)
-        store_col = None
-        for c in master_df.columns:
-            if c.strip().upper() == 'STORE':
-                store_col = c
-                break
-        if store_col is None:
-            st.error("**No 'Store' column found** in the Google Sheet. "
-                     "Make sure the first row has a column named 'Store'.")
-            return []
+        # Parse: category headers are in _CATEGORY_HEADERS, stores are rows in between
+        grouped: dict[str, list[str]] = {}
+        current_cat = None
+        for cell in all_values:
+            val = str(cell).strip()
+            if not val:
+                continue
+            upper = val.upper()
+            # Check if this row is a category header
+            if upper in (h.upper() for h in _CATEGORY_HEADERS):
+                # Use the original-case version from our constant for display
+                current_cat = next(h for h in _CATEGORY_HEADERS if h.upper() == upper)
+                grouped[current_cat] = []
+            elif current_cat is not None:
+                grouped[current_cat].append(val)
 
-        stores = master_df[store_col].dropna().astype(str).str.strip().tolist()
-        return [s for s in stores if s]
-    except requests.exceptions.HTTPError as e:
+        return grouped
+    except KeyError:
         st.error(
-            f"**Could not access Google Sheet.** Make sure sharing is set to "
-            f"'Anyone with the link can view'.\n\nHTTP {e.response.status_code}"
+            "**Service account credentials not found.** "
+            "Add `[gcp_service_account]` to `.streamlit/secrets.toml` "
+            "with your service account JSON keys."
         )
-        return []
+        return {}
     except Exception as e:
         st.error(f"**Failed to fetch master store list:** {e}")
-        return []
+        return {}
+
+
+def _render_store_group(title: str, stores: list[str], loaded_stores: set[str]):
+    """Render a single category block: gold header + store rows with check icons."""
+    # Category header
+    st.markdown(
+        f'<div style="background:rgba(201,169,110,0.18); border:1px solid {GOLD}; '
+        f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
+        f'font-size:0.72rem; font-weight:700; letter-spacing:0.1em; '
+        f'text-transform:uppercase; color:{GOLD};">{title}</div>',
+        unsafe_allow_html=True,
+    )
+    # Store rows
+    for store in stores:
+        found = store in loaded_stores
+        icon = "✅" if found else "☐"
+        name_color = TEXT if found else MUTED
+        st.markdown(
+            f'<div style="display:flex; align-items:center; gap:8px; '
+            f'padding:4px 12px; border-bottom:1px solid {BORDER}; '
+            f'font-size:0.78rem; color:{name_color};">'
+            f'<span style="font-size:0.85rem;">{icon}</span>'
+            f'<span>{store}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
 
 with tab7:
@@ -1853,46 +1907,40 @@ with tab7:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Auto-fetch on first load, persist in session_state ─────────────────────
-    if 'checklist_master_stores' not in st.session_state:
-        st.session_state.checklist_master_stores = []
+    # ── Session state for grouped master list ──────────────────────────────────
+    if 'checklist_groups' not in st.session_state:
+        st.session_state.checklist_groups = {}   # {category: [store, ...]}
     if 'checklist_loaded' not in st.session_state:
         st.session_state.checklist_loaded = False
 
-    # Auto-fetch on first visit (only once)
-    if not st.session_state.checklist_loaded and _MASTER_SHEET_ID != "YOUR_SHEET_ID_HERE":
+    # Auto-fetch on first visit
+    if not st.session_state.checklist_loaded:
         with st.spinner("Loading master store list from Google Sheet…"):
-            fetched = _fetch_master_stores_from_sheet()
-        if fetched:
-            st.session_state.checklist_master_stores = fetched
+            groups = _fetch_master_stores()
+        if groups:
+            st.session_state.checklist_groups = groups
             st.session_state.checklist_loaded = True
-            st.success(f"✓ Loaded **{len(fetched)}** stores from Google Sheet")
+            total = sum(len(v) for v in groups.values())
+            st.success(f"✓ Loaded **{total}** stores from Google Sheet")
 
     # Manual refresh button
     if st.button("🔄  Refresh from Sheet", key="refresh_master_sheet"):
         with st.spinner("Refreshing master store list…"):
-            fetched = _fetch_master_stores_from_sheet()
-        if fetched:
-            st.session_state.checklist_master_stores = fetched
+            groups = _fetch_master_stores()
+        if groups:
+            st.session_state.checklist_groups = groups
             st.session_state.checklist_loaded = True
-            st.success(f"✓ Loaded **{len(fetched)}** stores from Google Sheet")
-        elif not fetched and _MASTER_SHEET_ID == "YOUR_SHEET_ID_HERE":
-            st.warning("**Sheet ID not configured.** Replace `YOUR_SHEET_ID_HERE` in app.py with your Google Sheet ID.")
+            total = sum(len(v) for v in groups.values())
+            st.success(f"✓ Loaded **{total}** stores from Google Sheet")
 
     st.markdown("---")
 
-    # ── Checklist comparison ───────────────────────────────────────────────────
-    master_stores = st.session_state.checklist_master_stores
+    # ── Checklist display ──────────────────────────────────────────────────────
+    groups = st.session_state.checklist_groups
     loaded_stores = set(df['Store'].dropna().unique()) if not df.empty else set()
-    del_date_label = sorted(df['Delivery Date'].dropna().unique())[0] if not df.empty else "—"
+    today_str = pd.Timestamp.now().strftime("%B %d, %Y")
 
-    if not master_stores:
-        placeholder_msg = (
-            'Replace <code>YOUR_SHEET_ID_HERE</code> in app.py with your Google Sheet ID, '
-            'then refresh this page'
-        ) if _MASTER_SHEET_ID == "YOUR_SHEET_ID_HERE" else (
-            'Click "Refresh from Sheet" above to load the master store list'
-        )
+    if not groups:
         st.markdown(f"""
         <div style="padding:36px; text-align:center; color:{MUTED};
                     border:1px dashed {BORDER}; border-radius:4px;">
@@ -1900,64 +1948,76 @@ with tab7:
             No master store list loaded
           </div>
           <div style="font-size:0.72rem; margin-top:8px;">
-            {placeholder_msg}
+            Check that <code>[gcp_service_account]</code> is configured in Streamlit secrets
+            and the service account has access to the Sheet.
           </div>
         </div>
         """, unsafe_allow_html=True)
     else:
-        checklist_data = []
-        for master_store in master_stores:
-            found = master_store in loaded_stores
-            checklist_data.append({
-                'Store': master_store,
-                'Status': '✅ Received' if found else '❌ Missing',
-                'Lines': int(df[df['Store'] == master_store].shape[0]) if found else 0,
-                'Amount': f"₱{df[df['Store'] == master_store]['Total Amount'].sum():,.2f}" if found else "—",
-            })
+        all_master = [s for stores in groups.values() for s in stores]
+        master_set = set(all_master)
+        received = sum(1 for s in all_master if s in loaded_stores)
+        total_expected = len(all_master)
 
-        # Also add any loaded stores NOT in master list (unexpected stores)
-        master_set = set(master_stores)
-        for store in sorted(loaded_stores):
-            if store not in master_set:
-                checklist_data.append({
-                    'Store': store,
-                    'Status': '🟡 Not in master list',
-                    'Lines': int(df[df['Store'] == store].shape[0]),
-                    'Amount': f"₱{df[df['Store'] == store]['Total Amount'].sum():,.2f}",
-                })
+        # Date header
+        st.markdown(
+            f'<div style="font-size:0.85rem; font-weight:600; color:{TEXT}; '
+            f'margin-bottom:16px;">DATE: {today_str}</div>',
+            unsafe_allow_html=True,
+        )
 
-        checklist_df = pd.DataFrame(checklist_data)
-        received = sum(1 for r in checklist_data if '✅' in r['Status'])
-        missing  = sum(1 for r in checklist_data if '❌' in r['Status'])
-
+        # Summary pills
         st.markdown(f"""
         <div style="display:flex; gap:16px; margin-bottom:16px; flex-wrap:wrap;">
-          <span class="info-pill">📅 Delivery: {del_date_label}</span>
           <span class="info-pill" style="color:{GREEN};">✅ {received} received</span>
-          <span class="info-pill" style="color:{RED}; border-color:{RED};">❌ {missing} missing</span>
-          <span class="info-pill">📋 {len(master_stores)} expected</span>
+          <span class="info-pill" style="color:{RED}; border-color:{RED};">☐ {total_expected - received} pending</span>
+          <span class="info-pill">📋 {total_expected} expected</span>
         </div>
         """, unsafe_allow_html=True)
 
-        st.dataframe(
-            checklist_df,
-            use_container_width=True,
-            hide_index=True,
-            height=min(700, 56 + len(checklist_df) * 36),
-            column_config={
-                "Status": st.column_config.TextColumn("Status", width="medium"),
-            }
-        )
+        # ── 2-column grid matching the screenshot layout ──────────────────────
+        # Row 1: Full Service (left) | Tag Concessions (right)
+        # Row 2: Coffee Shops (left) | Phat Pho (right)
+        cat_list = list(groups.keys())
 
-        if missing > 0:
-            missing_stores = [r['Store'] for r in checklist_data if '❌' in r['Status']]
+        # Build pairs: (left, right) for each row
+        pairs = []
+        for i in range(0, len(cat_list), 2):
+            left = cat_list[i] if i < len(cat_list) else None
+            right = cat_list[i + 1] if i + 1 < len(cat_list) else None
+            pairs.append((left, right))
+
+        for left_cat, right_cat in pairs:
+            col_left, col_right = st.columns(2)
+            with col_left:
+                if left_cat and left_cat in groups:
+                    _render_store_group(left_cat, groups[left_cat], loaded_stores)
+            with col_right:
+                if right_cat and right_cat in groups:
+                    _render_store_group(right_cat, groups[right_cat], loaded_stores)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── Unrecognized Stores ───────────────────────────────────────────────
+        unrecognized = sorted(loaded_stores - master_set)
+        if unrecognized:
+            st.markdown("---")
             st.markdown(
-                f'<div style="margin-top:12px; padding:12px; background:rgba(229,57,53,0.08); '
-                f'border:1px solid rgba(229,57,53,0.3); border-radius:4px;">'
-                f'<div style="font-size:0.7rem; font-weight:600; color:{RED}; margin-bottom:6px;">'
-                f'Missing PDFs ({missing}):</div>'
-                f'<div style="font-size:0.75rem; color:{TEXT};">'
-                + " · ".join(missing_stores)
-                + '</div></div>',
-                unsafe_allow_html=True
+                f'<div class="section-label">Unrecognized Stores — '
+                f'not in master list ({len(unrecognized)})</div>',
+                unsafe_allow_html=True,
             )
+            st.markdown(
+                f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:8px;">'
+                f'These stores appeared in parsed PDFs but do not match any name in the '
+                f'master list. Check for renamed stores or typos.</div>',
+                unsafe_allow_html=True,
+            )
+            unrec_df = pd.DataFrame([
+                {
+                    'Store': s,
+                    'Lines': int(df[df['Store'] == s].shape[0]),
+                    'Amount': f"₱{df[df['Store'] == s]['Total Amount'].sum():,.2f}",
+                }
+                for s in unrecognized
+            ])
+            st.dataframe(unrec_df, use_container_width=True, hide_index=True)
