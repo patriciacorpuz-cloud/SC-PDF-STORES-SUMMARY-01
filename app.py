@@ -1077,8 +1077,9 @@ def _generate_combined_pdf(
     order_date: str,
     delivery_date: str,
     prepared_by: str,
+    undelivered_rows: list[dict] | None = None,
 ) -> bytes:
-    """Generate a print-ready PDF combining unavailable items and manual orders.
+    """Generate a print-ready PDF combining undelivered items, unavailable items, and manual orders.
     Uses fpdf2. Returns PDF bytes.
     """
     from fpdf import FPDF
@@ -1131,6 +1132,62 @@ def _generate_combined_pdf(
     pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
+
+    # ── Section 0: Undelivered Rows (row-by-row from Undelivered Report) ─────
+    if undelivered_rows:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_fill_color(26, 26, 26)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 8, "  UNDELIVERED ITEMS", new_x="LMARGIN", new_y="NEXT", fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(3)
+
+        # Group by item, then show stores per item
+        from collections import defaultdict
+        ud_grouped = defaultdict(list)
+        ud_remarks_map = {}
+        for row in undelivered_rows:
+            item = row.get("item", "")
+            ud_grouped[item].append(row)
+            if row.get("remarks"):
+                ud_remarks_map[item] = row["remarks"]
+
+        col_w = [90, 30, 40]
+        headers = ["STORE", "QTY", "REMARKS"]
+
+        for item_name, rows in ud_grouped.items():
+            if pdf.get_y() > 250:
+                pdf.add_page()
+
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_fill_color(240, 235, 226)
+            pdf.set_draw_color(201, 169, 110)
+            pdf.cell(0, 7, _safe(f"  {item_name}"), new_x="LMARGIN", new_y="NEXT", fill=True, border="L")
+            pdf.set_draw_color(0, 0, 0)
+
+            if item_name in ud_remarks_map:
+                pdf.set_font("Helvetica", "I", 8)
+                pdf.set_text_color(122, 92, 30)
+                pdf.cell(0, 5, _safe(f"  Remarks: {ud_remarks_map[item_name]}"), new_x="LMARGIN", new_y="NEXT")
+                pdf.set_text_color(0, 0, 0)
+
+            # Table header
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(240, 240, 240)
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 6, h, border=1, fill=True, align="C")
+            pdf.ln()
+
+            pdf.set_font("Helvetica", "", 8)
+            for r in rows:
+                if pdf.get_y() > 270:
+                    pdf.add_page()
+                pdf.cell(col_w[0], 5.5, _safe(f"  {r.get('store', '')}"), border=1)
+                pdf.cell(col_w[1], 5.5, str(r.get("qty", "")), border=1, align="C")
+                pdf.cell(col_w[2], 5.5, _safe(r.get("remarks", "")), border=1, align="C")
+                pdf.ln()
+
+            pdf.ln(4)
 
     # ── Section 1: Unavailable Items ──────────────────────────────────────────
     if unavailable_items:
@@ -1251,8 +1308,8 @@ def _generate_combined_pdf(
 
             pdf.ln(4)
 
-    # If both empty, show a message
-    if not unavailable_items and not manual_orders:
+    # If all empty, show a message
+    if not undelivered_rows and not unavailable_items and not manual_orders:
         pdf.set_font("Helvetica", "", 10)
         pdf.cell(0, 10, "No items to report.", new_x="LMARGIN", new_y="NEXT", align="C")
 
@@ -2355,22 +2412,22 @@ with tab6:
         unsafe_allow_html=True,
     )
 
-    has_unavailable = bool(st.session_state.unavailable_items)
+    has_undelivered = bool(st.session_state.undelivered_rows)
     has_manual = bool(st.session_state.manual_orders)
 
-    if not has_unavailable and not has_manual:
+    if not has_undelivered and not has_manual:
         st.markdown(
             f'<div style="font-size:0.72rem; color:{MUTED}; padding:12px; '
             f'border:1px dashed {BORDER}; border-radius:4px; text-align:center;">'
-            f'No data to generate report — add unavailable items in the Undelivered Report tab '
+            f'No data to generate report — add undelivered items in the Undelivered Report tab '
             f'and/or add manual orders above.</div>',
             unsafe_allow_html=True,
         )
     else:
         # Summary of what will be included
         summary_parts = []
-        if has_unavailable:
-            summary_parts.append(f"{len(st.session_state.unavailable_items)} unavailable item(s)")
+        if has_undelivered:
+            summary_parts.append(f"{len(st.session_state.undelivered_rows)} undelivered row(s)")
         if has_manual:
             summary_parts.append(f"{len(st.session_state.manual_orders)} manual order(s)")
         st.markdown(
@@ -2380,19 +2437,19 @@ with tab6:
         )
 
         # Use the same report settings from the Undelivered Report tab
-        # (they are stored in session state via widget keys)
         r_title = st.session_state.get("ud_title", "COMBINED REPORT")
         r_order = st.session_state.get("ud_order_date", "")
         r_del = st.session_state.get("ud_del_date", "")
         r_prep = st.session_state.get("ud_prep_by", "—")
 
         combined_pdf = _generate_combined_pdf(
-            unavailable_items=st.session_state.unavailable_items,
+            unavailable_items=[],
             manual_orders=st.session_state.manual_orders,
             report_title=r_title or "COMBINED REPORT",
             order_date=r_order,
             delivery_date=r_del,
             prepared_by=r_prep or "—",
+            undelivered_rows=st.session_state.undelivered_rows,
         )
         title_safe = re.sub(r'[^\w\s-]', '', r_title or "COMBINED_REPORT").replace(' ', '_')
         st.download_button(
