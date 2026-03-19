@@ -201,8 +201,18 @@ GRID_STYLE = dict(gridcolor=BORDER, zerolinecolor=BORDER)
 # ─── PDF PARSING ────────────────────────────────────────────────────────────────
 
 def clean_store_name(raw_name: str) -> str:
-    """P1-E/I: Strip date suffix like ' - 03_15_26' from filename-based store names."""
-    return re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}\s*$', '', raw_name).strip()
+    """P1-E/I: Strip date suffix and OS duplicate markers from filename-based store names.
+    Handles: ' - 03_15_26', ' - 03_21_26 (1)', ' - 03_21_26 (1) (1)', trailing ' (CS 2)', ' (FS)'.
+    """
+    n = raw_name.strip()
+    # Strip date suffix and everything after it: ' - MM_DD_YY...'
+    n = re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}.*$', '', n).strip()
+    # Strip trailing parenthetical suffixes like (CS 2), (CS 1), (FS), (F), (1)
+    # These come from OS duplicate markers or PDF naming conventions
+    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n, flags=re.IGNORECASE).strip()
+    # Run again in case there were nested suffixes like "(1) (1)" or "(CS 2)" after date strip
+    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n, flags=re.IGNORECASE).strip()
+    return n
 
 
 def extract_store_name(text: str) -> str:
@@ -1526,6 +1536,31 @@ with st.sidebar:
                 combined = combined[combined['Item Description'].str.strip().str.len() > 0]
                 # P0-B: Resolve empty locations via cross-reference instead of dropping rows
                 combined = resolve_empty_locations(combined, all_warnings)
+                # Deduplicate stores that resolve to the same clean name (e.g. OS duplicate files)
+                if not combined.empty:
+                    combined['_clean_store'] = combined['Store'].apply(
+                        lambda s: _normalize_store(s) if pd.notna(s) else ''
+                    )
+                    dup_groups = combined.groupby('_clean_store')['Store'].apply(
+                        lambda x: list(x.unique())
+                    )
+                    for clean_name, store_variants in dup_groups.items():
+                        if len(store_variants) > 1:
+                            # Keep the variant with more rows, drop the rest
+                            counts = {
+                                sv: len(combined[combined['Store'] == sv])
+                                for sv in store_variants
+                            }
+                            keep = max(counts, key=counts.get)
+                            drop_variants = [sv for sv in store_variants if sv != keep]
+                            for dv in drop_variants:
+                                all_warnings.append(
+                                    f"Duplicate store: '{dv}' merged into '{keep}' "
+                                    f"({counts[dv]} rows dropped, {counts[keep]} kept)"
+                                )
+                                combined = combined[combined['Store'] != dv]
+                    combined.drop(columns=['_clean_store'], inplace=True)
+
                 st.session_state.df              = combined
                 st.session_state.file_names      = new_names
                 st.session_state.parse_warnings  = all_warnings
@@ -2692,17 +2727,20 @@ def _fetch_master_stores() -> dict[str, list[str]]:
 
 
 def _normalize_store(name: str) -> str:
-    """Strip type codes like -(CS), -(F), -(B) from master list names for matching.
-    'ABC-(CS) CYBER' → 'ABC-CYBER', 'ABC-(F) TGU' → 'ABC-TGU'.
-    Also normalizes whitespace and uppercases. PDF-parsed names pass through unchanged
-    (they already lack the type code).
+    """Normalize a store name for matching between master list and parsed PDFs.
+    Strips: type codes -(CS)/(F), trailing suffixes (CS 2)/(FS)/(1), date remnants.
+    'ABC-(CS) CYBER' → 'ABC-CYBER', 'ABC-(F) TGU-BAR (FS)' → 'ABC-TGU-BAR'.
     """
     n = name.upper().strip()
-    # Remove -(XX) or -(X) type codes: pattern like "-(CS) " or "-(F) "
+    # Strip date suffix and everything after: ' - MM_DD_YY...'
+    n = re.sub(r'\s*-\s*\d{2}_\d{2}_\d{2,4}.*$', '', n).strip()
+    # Strip trailing parenthetical suffixes: (CS 2), (CS 1), (FS), (F), (1), etc.
+    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
+    n = re.sub(r'\s*\((?:CS\s*\d*|FS|F|B|\d+)\)\s*$', '', n).strip()
+    # Remove -(XX) type codes from master list names: "-(CS) " or "-(F) "
     n = re.sub(r'-\([A-Z]+\)\s*', '-', n)
-    # Collapse any double dashes from removal
+    # Collapse double dashes and normalize whitespace
     n = re.sub(r'-{2,}', '-', n)
-    # Normalize multiple spaces
     n = re.sub(r'\s+', ' ', n).strip()
     return n
 
