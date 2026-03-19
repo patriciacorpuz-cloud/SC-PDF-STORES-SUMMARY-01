@@ -940,12 +940,94 @@ def _parse_drive_link(url: str) -> tuple[str, str]:
     return 'unknown', ''
 
 
+def _drive_download_file(file_id: str, session: 'requests.Session') -> tuple[str, bytes] | None:
+    """Download a single file from Google Drive using the public export URL.
+    Handles the large-file confirmation page automatically.
+    Returns (filename, bytes) or None on failure.
+    """
+    import requests
+
+    download_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+    resp = session.get(download_url, stream=True, timeout=60)
+
+    # Google may serve a confirmation page for large files (virus scan warning).
+    # The confirm token is in a cookie or in the page HTML.
+    if b'confirm=' in resp.content[:2000] or resp.headers.get('Content-Type', '').startswith('text/html'):
+        # Extract confirm token from cookies
+        confirm_token = None
+        for k, v in session.cookies.items():
+            if 'download_warning' in k or 'NID' in k:
+                confirm_token = v
+                break
+        if not confirm_token:
+            # Try to extract from HTML response
+            m = re.search(r'confirm=([0-9A-Za-z_-]+)', resp.text)
+            if m:
+                confirm_token = m.group(1)
+        if confirm_token:
+            resp = session.get(
+                download_url + f"&confirm={confirm_token}",
+                stream=True, timeout=60,
+            )
+
+    # Extract filename from content-disposition header
+    cd = resp.headers.get('Content-Disposition', '')
+    fname_match = re.search(r'filename\*?=["\']?(?:UTF-8\'\')?([^"\';\r\n]+)', cd)
+    if fname_match:
+        from urllib.parse import unquote
+        fname = unquote(fname_match.group(1)).strip()
+    else:
+        fname = f"drive_{file_id[:8]}.pdf"
+
+    content = resp.content
+
+    # Verify it's actually a PDF (not an HTML error page)
+    if not content[:5].startswith(b'%PDF'):
+        return None
+
+    return (fname, content)
+
+
+def _drive_list_folder_files(folder_id: str) -> list[dict]:
+    """List PDF files in a public Google Drive folder by scraping the folder page.
+    Returns list of dicts with 'id' and 'name' keys.
+    """
+    import requests
+
+    # Approach 1: Scrape the public folder page for file IDs and names
+    folder_url = f"https://drive.google.com/drive/folders/{folder_id}"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    resp = requests.get(folder_url, headers=headers, timeout=30)
+
+    if resp.status_code == 404:
+        return []
+    if resp.status_code != 200:
+        return []
+
+    html = resp.text
+
+    # Google Drive folder pages embed file data in JavaScript.
+    # File IDs appear as /file/d/FILE_ID/ patterns, and names appear nearby.
+    # Extract all unique file IDs from the page.
+    file_ids = re.findall(r'/file/d/([A-Za-z0-9_-]{20,})', html)
+    file_ids = list(dict.fromkeys(file_ids))  # deduplicate preserving order
+
+    if not file_ids:
+        # Fallback: try extracting IDs from data attributes or JS arrays
+        file_ids = re.findall(r'\["([A-Za-z0-9_-]{28,})"', html)
+        # Filter to likely file IDs (not folder IDs which we already have)
+        file_ids = [fid for fid in dict.fromkeys(file_ids) if fid != folder_id]
+
+    # We don't reliably get filenames from scraping, so we'll get them during download
+    return [{"id": fid, "name": ""} for fid in file_ids]
+
+
 def _download_from_drive(url: str) -> list[tuple[str, bytes]]:
     """Download PDFs from a Google Drive link (folder or single file).
+    Uses direct HTTP requests (no gdown) for reliability with public links.
     Returns list of (filename, bytes) tuples.
-    Shows progress in the Streamlit sidebar.
     """
-    import gdown
+    import requests
 
     link_type, drive_id = _parse_drive_link(url)
 
@@ -957,113 +1039,91 @@ def _download_from_drive(url: str) -> list[tuple[str, bytes]]:
         )
         return []
 
+    session = requests.Session()
+    session.headers.update({"User-Agent": "Mozilla/5.0"})
     results = []  # (name, bytes)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        if link_type == 'folder':
-            # Download entire folder
-            status = st.empty()
-            status.info("Scanning Google Drive folder…")
-            try:
-                downloaded = gdown.download_folder(
-                    id=drive_id,
-                    output=tmpdir,
-                    quiet=True,
-                    remaining_ok=True,
-                )
-            except Exception as e:
-                status.empty()
-                err_msg = str(e)
-                if "access" in err_msg.lower() or "404" in err_msg or "403" in err_msg:
-                    st.error(
-                        "**Could not access folder** — make sure sharing is set to "
-                        "**Anyone with the link can view**."
-                    )
-                else:
-                    st.error(f"**Drive download failed:** {e}")
-                return []
+    if link_type == 'folder':
+        status = st.empty()
+        status.info("Scanning Google Drive folder for PDF files…")
+
+        file_list = _drive_list_folder_files(drive_id)
+
+        if not file_list:
             status.empty()
+            st.error(
+                "**No files found in folder.** Possible causes:\n"
+                "- Folder is not shared as **Anyone with the link can view**\n"
+                "- Folder is empty\n"
+                "- Google is blocking automated access (try again in a few seconds)"
+            )
+            return []
 
-            if not downloaded:
-                st.warning("**No files found** in the Drive folder, or folder is not accessible.")
-                return []
+        status.empty()
+        st.info(f"Found **{len(file_list)} file(s)** in folder — downloading PDFs…")
 
-            # Collect all PDFs from the downloaded folder (may be nested)
-            pdf_paths = list(Path(tmpdir).rglob("*.pdf")) + list(Path(tmpdir).rglob("*.PDF"))
-            # Deduplicate
-            seen_names = set()
-            unique_pdfs = []
-            for p in pdf_paths:
-                if p.name.lower() not in seen_names:
-                    seen_names.add(p.name.lower())
-                    unique_pdfs.append(p)
-            pdf_paths = unique_pdfs
+        progress = st.progress(0, text=f"Downloading 0 of {len(file_list)} files…")
+        skipped = 0
 
-            if not pdf_paths:
-                st.warning("**No PDF files found** in the Drive folder.")
-                return []
+        for i, f_info in enumerate(file_list):
+            progress.progress(
+                (i + 1) / len(file_list),
+                text=f"Downloading {i + 1} of {len(file_list)} files…"
+            )
+            try:
+                result = _drive_download_file(f_info["id"], session)
+                if result:
+                    fname, fbytes = result
+                    # Only keep PDFs
+                    if fname.lower().endswith('.pdf') or fbytes[:5].startswith(b'%PDF'):
+                        if not fname.lower().endswith('.pdf'):
+                            fname += '.pdf'
+                        results.append((fname, fbytes))
+                    else:
+                        skipped += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                st.warning(f"Failed to download file `{f_info['id'][:12]}…`: {e}")
 
-            progress = st.progress(0, text=f"Downloading 0 of {len(pdf_paths)} files…")
-            for i, p in enumerate(pdf_paths):
-                try:
-                    results.append((p.name, p.read_bytes()))
-                except Exception as e:
-                    st.warning(f"Could not read **{p.name}**: {e}")
-                progress.progress(
-                    (i + 1) / len(pdf_paths),
-                    text=f"Downloading {i + 1} of {len(pdf_paths)} files…"
-                )
-            progress.empty()
-            st.success(f"✓ Downloaded **{len(results)} PDF(s)** — parsing now…")
+        progress.empty()
 
+        if results:
+            msg = f"✓ Downloaded **{len(results)} PDF(s)** — parsing now…"
+            if skipped:
+                msg += f"  ({skipped} non-PDF file(s) skipped)"
+            st.success(msg)
         else:
-            # Single file download
-            status = st.empty()
-            status.info("Downloading file from Google Drive…")
-            out_path = os.path.join(tmpdir, "download.pdf")
-            try:
-                result_path = gdown.download(
-                    id=drive_id,
-                    output=out_path,
-                    quiet=True,
-                    fuzzy=False,
-                )
-            except Exception as e:
-                status.empty()
-                err_msg = str(e)
-                if "access" in err_msg.lower() or "404" in err_msg or "403" in err_msg:
-                    st.error(
-                        "**Could not access file** — make sure sharing is set to "
-                        "**Anyone with the link can view**."
-                    )
-                else:
-                    st.error(f"**Drive download failed:** {e}")
-                return []
+            st.error(
+                "**No PDFs could be downloaded.** Make sure the folder contains PDF files "
+                "and sharing is set to **Anyone with the link can view**."
+            )
+
+    else:
+        # Single file download
+        status = st.empty()
+        status.info("Downloading file from Google Drive…")
+
+        try:
+            result = _drive_download_file(drive_id, session)
+        except Exception as e:
             status.empty()
+            st.error(f"**Download failed:** {e}")
+            return []
+        status.empty()
 
-            if not result_path or not os.path.exists(result_path):
-                st.error(
-                    "**Download failed** — file may not be accessible. "
-                    "Make sure sharing is set to **Anyone with the link can view**."
-                )
-                return []
+        if not result:
+            st.error(
+                "**Download failed** — the file may not be a PDF or is not accessible. "
+                "Make sure sharing is set to **Anyone with the link can view**."
+            )
+            return []
 
-            # Check it's actually a PDF (Drive might return an HTML error page)
-            file_bytes = Path(result_path).read_bytes()
-            if not file_bytes[:5].startswith(b'%PDF'):
-                st.error(
-                    "**Downloaded file is not a valid PDF** — "
-                    "the file may be restricted. Make sure sharing is set to "
-                    "**Anyone with the link can view**."
-                )
-                return []
-
-            # Try to get original filename from content-disposition or use generic
-            fname = Path(result_path).name
-            if fname == "download.pdf":
-                fname = f"drive_file_{drive_id[:8]}.pdf"
-            results.append((fname, file_bytes))
-            st.success(f"✓ Downloaded **1 PDF** — parsing now…")
+        fname, fbytes = result
+        if not fname.lower().endswith('.pdf'):
+            fname += '.pdf'
+        results.append((fname, fbytes))
+        st.success(f"✓ Downloaded **1 PDF** ({fname}) — parsing now…")
 
     return results
 
