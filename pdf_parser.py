@@ -152,13 +152,36 @@ def parse_pdf(
                     "vertical_strategy":   "lines",
                     "horizontal_strategy": "lines"
                 })
+
+                # Fallback: if no tables found with lines strategy, try text strategy
+                if not tables:
+                    tables = page.extract_tables({
+                        "vertical_strategy":   "text",
+                        "horizontal_strategy": "text"
+                    })
+                    if tables:
+                        warnings.append(
+                            f"Page {page_num+1}: used text-based table extraction "
+                            f"(no line borders detected)"
+                        )
+
                 for table in tables:
                     if not table or len(table) < 1:
                         continue
 
                     header_idx = None
                     for i, row in enumerate(table):
-                        if row and any('LOCATION' in str(cell or '').upper() for cell in row):
+                        if not row:
+                            continue
+                        row_text = [str(cell or '').upper() for cell in row]
+                        row_joined = ' '.join(row_text)
+                        # Primary: look for LOCATION header
+                        if any('LOCATION' in cell for cell in row_text):
+                            header_idx = i
+                            break
+                        # Fallback: look for PLU + ITEM/DESCRIPTION combo
+                        if ('PLU' in row_joined and
+                                ('ITEM' in row_joined or 'DESCRIPTION' in row_joined)):
                             header_idx = i
                             break
 
