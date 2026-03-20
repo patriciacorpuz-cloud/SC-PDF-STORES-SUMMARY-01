@@ -204,7 +204,17 @@ def parse_pdf(
                         idx_item  = col('ITEM') or col('DESCRIPTION')
                         idx_uom   = col('UOM')
                         idx_amt   = col('TOTAL AMOUNT') or col('AMOUNT')
-                        idx_days  = col('DAYS')
+                        idx_days  = col('DAYS') or col('MAXIMUM')
+
+                        # Fallback: if ITEM/DESCRIPTION column not found by keyword,
+                        # infer it positionally — it's typically between ORDER and UOM
+                        if idx_item is None and idx_uom is not None:
+                            # Item description is the column just before UOM
+                            candidate = idx_uom - 1
+                            # Make sure it's not already claimed by another column
+                            used = {idx_loc, idx_plu, idx_order, idx_uom, idx_amt, idx_days}
+                            if candidate >= 0 and candidate not in used:
+                                idx_item = candidate
 
                         data_rows = table[header_idx + 1:]
                     else:
@@ -213,14 +223,22 @@ def parse_pdf(
                                 f"Page {page_num+1}: skipped — no header row and no prior column layout"
                             )
                             continue
-                        # Continuation page: validate column count
+                        # Continuation page: validate column count, skip empty rows
                         data_rows = []
                         for row in table:
-                            if row and len(row) != known_col_count:
-                                warnings.append(
-                                    f"Page {page_num+1}: row skipped — "
-                                    f"{len(row)} cols (expected {known_col_count})"
+                            if not row:
+                                continue
+                            # Skip rows with wrong column count (different table structure)
+                            if len(row) != known_col_count:
+                                # Only warn if the row has actual content
+                                has_content = any(
+                                    str(c or '').strip() for c in row
                                 )
+                                if has_content:
+                                    warnings.append(
+                                        f"Page {page_num+1}: row skipped — "
+                                        f"{len(row)} cols (expected {known_col_count})"
+                                    )
                                 continue
                             data_rows.append(row)
 
