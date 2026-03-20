@@ -259,6 +259,10 @@ def parse_pdf(
                         if not item or item.upper() in ('ITEM DESCRIPTION', 'DESCRIPTION'):
                             continue
 
+                        # Skip placeholder/instruction rows
+                        if 'DO NOT TOUCH' in item.upper():
+                            continue
+
                         # Track last seen location for forward-fill
                         if location and location.upper() != 'LOCATION':
                             last_location = location

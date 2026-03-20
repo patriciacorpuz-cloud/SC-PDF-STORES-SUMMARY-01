@@ -46,142 +46,208 @@ st.markdown(f"""
     background-color: {DARK};
     color: {TEXT};
   }}
+
+  /* ── Sidebar ── */
   section[data-testid="stSidebar"] {{
-    background-color: #0A0A0A !important;
+    background-color: #080808 !important;
     border-right: 1px solid {BORDER};
   }}
   section[data-testid="stSidebar"] * {{ font-family: 'Jost', sans-serif !important; }}
+  section[data-testid="stSidebar"] hr {{
+    margin: 16px 0 !important;
+    border-color: rgba(201,169,110,0.12) !important;
+  }}
+  /* Clean up Streamlit expander arrows in sidebar */
+  section[data-testid="stSidebar"] [data-testid="stExpander"] summary {{
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em !important;
+    color: {TEXT} !important;
+  }}
+  section[data-testid="stSidebar"] [data-testid="stExpander"] {{
+    border: 1px solid {BORDER} !important;
+    border-radius: 4px !important;
+    background: rgba(20,20,20,0.6) !important;
+    margin-bottom: 6px !important;
+  }}
+  /* Hide default Streamlit alert boxes in sidebar after loading */
+  section[data-testid="stSidebar"] [data-testid="stAlert"] {{
+    font-size: 0.72rem !important;
+    padding: 8px 12px !important;
+    border-radius: 3px !important;
+  }}
 
+  /* ── Header ── */
   .abaca-header {{
-    display: flex; align-items: center; gap: 16px;
+    display: flex; align-items: flex-end; gap: 20px;
     border-bottom: 1px solid {BORDER};
-    padding-bottom: 20px; margin-bottom: 24px;
+    padding-bottom: 20px; margin-bottom: 28px;
   }}
   .abaca-wordmark {{
     font-family: 'Manrope', sans-serif;
-    font-size: 0.65rem; font-weight: 600;
-    letter-spacing: 0.25em; text-transform: uppercase;
-    color: {MUTED}; margin-top: 2px;
+    font-size: 0.6rem; font-weight: 700;
+    letter-spacing: 0.3em; text-transform: uppercase;
+    color: {GOLD}; opacity: 0.7;
   }}
   .abaca-title {{
     font-family: 'Jost', sans-serif;
-    font-size: 1.6rem; font-weight: 600;
-    color: {TEXT}; letter-spacing: 0.03em; margin: 0;
+    font-size: 1.5rem; font-weight: 500;
+    color: {TEXT}; letter-spacing: 0.06em; margin: 0;
   }}
-  .gold-line {{ width: 36px; height: 2px; background: {GOLD}; margin: 6px 0; }}
+  .gold-line {{ width: 32px; height: 2px; background: {GOLD}; margin: 8px 0 0 0; }}
 
-  .kpi-row {{ display: flex; gap: 16px; margin-bottom: 28px; }}
+  /* ── KPI Cards ── */
+  .kpi-row {{ display: flex; gap: 12px; margin-bottom: 24px; }}
   .kpi-card {{
     flex: 1; background: {CARD};
-    border: 1px solid {BORDER}; border-left: 3px solid {GOLD};
-    border-radius: 4px; padding: 16px 20px;
+    border: 1px solid {BORDER}; border-top: 2px solid {GOLD};
+    border-radius: 3px; padding: 14px 16px;
+    transition: border-color 0.2s;
   }}
+  .kpi-card:hover {{ border-color: rgba(201,169,110,0.4); }}
   .kpi-label {{
-    font-size: 0.65rem; font-weight: 600;
-    letter-spacing: 0.15em; text-transform: uppercase;
-    color: {MUTED}; margin-bottom: 6px;
+    font-size: 0.58rem; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: {MUTED}; margin-bottom: 4px;
   }}
   .kpi-value {{
     font-family: 'Manrope', sans-serif;
-    font-size: 1.75rem; font-weight: 700; color: {TEXT};
+    font-size: 1.6rem; font-weight: 700; color: {TEXT};
+    line-height: 1.2;
   }}
-  .kpi-sub {{ font-size: 0.72rem; color: {MUTED}; margin-top: 3px; }}
+  .kpi-sub {{
+    font-size: 0.65rem; color: {MUTED}; margin-top: 2px;
+    letter-spacing: 0.02em;
+  }}
 
+  /* ── Section Labels ── */
   .section-label {{
-    font-size: 0.65rem; font-weight: 600;
-    letter-spacing: 0.2em; text-transform: uppercase;
+    font-size: 0.6rem; font-weight: 700;
+    letter-spacing: 0.22em; text-transform: uppercase;
     color: {GOLD}; margin-bottom: 12px;
+    position: relative; padding-left: 12px;
+  }}
+  .section-label::before {{
+    content: '';
+    position: absolute; left: 0; top: 1px;
+    width: 3px; height: 100%;
+    background: {GOLD}; border-radius: 1px;
   }}
 
-  .stDataFrame {{ border: 1px solid {BORDER} !important; border-radius: 4px; }}
+  /* ── Data Tables ── */
+  .stDataFrame {{ border: 1px solid {BORDER} !important; border-radius: 3px; }}
   .stDataFrame th {{
-    background: #1A1A1A !important; color: {MUTED} !important;
-    font-size: 0.65rem !important; letter-spacing: 0.1em !important;
+    background: #161616 !important; color: {MUTED} !important;
+    font-size: 0.6rem !important; letter-spacing: 0.12em !important;
     text-transform: uppercase !important;
     font-family: 'Jost', sans-serif !important;
     border-bottom: 1px solid {BORDER} !important;
+    padding: 8px 10px !important;
   }}
   .stDataFrame td {{
-    font-size: 0.82rem !important;
+    font-size: 0.78rem !important;
     font-family: 'Jost', sans-serif !important;
-    border-bottom: 1px solid #1E1E1E !important;
+    border-bottom: 1px solid #1A1A1A !important;
+    padding: 6px 10px !important;
   }}
 
+  /* ── Tabs ── */
   .stTabs [data-baseweb="tab-list"] {{
     border-bottom: 1px solid {BORDER} !important;
     gap: 0 !important; background: transparent !important;
   }}
   .stTabs [data-baseweb="tab"] {{
     font-family: 'Jost', sans-serif !important;
-    font-size: 0.7rem !important; font-weight: 600 !important;
-    letter-spacing: 0.12em !important; text-transform: uppercase !important;
-    color: {MUTED} !important; padding: 10px 24px !important;
+    font-size: 0.65rem !important; font-weight: 600 !important;
+    letter-spacing: 0.14em !important; text-transform: uppercase !important;
+    color: {MUTED} !important; padding: 10px 20px !important;
     border: none !important; border-bottom: 2px solid transparent !important;
     background: transparent !important;
+    transition: color 0.15s, border-color 0.15s;
+  }}
+  .stTabs [data-baseweb="tab"]:hover {{
+    color: {TEXT} !important;
   }}
   .stTabs [aria-selected="true"] {{
     color: {GOLD} !important; border-bottom: 2px solid {GOLD} !important;
   }}
 
+  /* ── Form Inputs ── */
   div[data-testid="stFileUploader"] {{
     border: 1px solid {BORDER} !important;
-    border-radius: 4px !important; padding: 8px !important;
+    border-radius: 3px !important; padding: 8px !important;
     background: {CARD} !important;
   }}
-
   .stRadio label {{ font-size: 0.78rem !important; }}
   .stMultiSelect [data-baseweb="tag"] {{
-    background: rgba(201,169,110,0.15) !important;
-    border: 1px solid {GOLD} !important; border-radius: 2px !important;
+    background: rgba(201,169,110,0.12) !important;
+    border: 1px solid rgba(201,169,110,0.4) !important; border-radius: 2px !important;
   }}
 
+  /* ── Buttons ── */
   .stButton button, .stDownloadButton button {{
     font-family: 'Jost', sans-serif !important;
-    letter-spacing: 0.1em !important; text-transform: uppercase !important;
-    font-size: 0.72rem !important; font-weight: 600 !important;
+    letter-spacing: 0.12em !important; text-transform: uppercase !important;
+    font-size: 0.68rem !important; font-weight: 600 !important;
     background: transparent !important;
-    border: 1px solid {GOLD} !important;
+    border: 1px solid rgba(201,169,110,0.5) !important;
     color: {GOLD} !important; border-radius: 2px !important;
+    transition: all 0.15s;
   }}
   .stButton button:hover, .stDownloadButton button:hover {{
-    background: rgba(201,169,110,0.1) !important;
+    background: rgba(201,169,110,0.08) !important;
+    border-color: {GOLD} !important;
   }}
 
-  .print-btn button {{
-    background: rgba(201,169,110,0.15) !important;
-    border: 1px solid {GOLD} !important;
-    color: {GOLD} !important;
-  }}
-
+  /* ── Badges ── */
   .out-badge {{
     display: inline-block;
-    background: rgba(229,57,53,0.15);
-    border: 1px solid {RED};
-    border-radius: 3px;
+    background: rgba(229,57,53,0.12);
+    border: 1px solid rgba(229,57,53,0.5);
+    border-radius: 2px;
     padding: 1px 6px;
-    font-size: 0.65rem;
+    font-size: 0.6rem;
     font-weight: 700;
     color: {RED};
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
   }}
 
-  hr {{ border-color: {BORDER} !important; margin: 24px 0 !important; }}
-  ::-webkit-scrollbar {{ width: 6px; height: 6px; }}
-  ::-webkit-scrollbar-track {{ background: {DARK}; }}
-  ::-webkit-scrollbar-thumb {{ background: {BORDER}; border-radius: 3px; }}
-  ::-webkit-scrollbar-thumb:hover {{ background: {GOLD}; }}
-
+  /* ── Info Pills ── */
   .info-pill {{
     display: inline-block;
-    background: rgba(201,169,110,0.12);
-    border: 1px solid rgba(201,169,110,0.3);
-    border-radius: 3px;
+    background: rgba(201,169,110,0.08);
+    border: 1px solid rgba(201,169,110,0.2);
+    border-radius: 2px;
     padding: 3px 10px;
-    font-size: 0.72rem;
+    font-size: 0.68rem;
     color: {GOLD};
-    letter-spacing: 0.08em;
+    letter-spacing: 0.06em;
     margin-right: 6px;
     margin-bottom: 4px;
+  }}
+
+  /* ── Misc ── */
+  hr {{ border-color: {BORDER} !important; margin: 20px 0 !important; }}
+  ::-webkit-scrollbar {{ width: 5px; height: 5px; }}
+  ::-webkit-scrollbar-track {{ background: transparent; }}
+  ::-webkit-scrollbar-thumb {{ background: {BORDER}; border-radius: 3px; }}
+  ::-webkit-scrollbar-thumb:hover {{ background: rgba(201,169,110,0.5); }}
+
+  /* ── Reconciliation Panel ── */
+  .recon-row {{
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 0.7rem; padding: 4px 0;
+    border-bottom: 1px solid rgba(42,42,42,0.5);
+  }}
+  .recon-ok {{ color: {TEXT}; }}
+  .recon-warn {{ color: {RED}; }}
+  .recon-meta {{ color: {MUTED}; font-size: 0.65rem; }}
+
+  /* ── Warning list ── */
+  .warn-item {{
+    font-size: 0.7rem; padding: 3px 0;
+    border-bottom: 1px solid rgba(42,42,42,0.3);
+    color: {TEXT};
   }}
 </style>
 """, unsafe_allow_html=True)
@@ -295,29 +361,6 @@ with st.sidebar:
                 combined['Days to Last'] = clean_numeric(combined['Days to Last'])
                 combined = combined[combined['Item Description'].str.strip().str.len() > 0]
                 combined = resolve_empty_locations(combined, all_warnings)
-                # Deduplicate stores that resolve to the same clean name
-                if not combined.empty:
-                    combined['_clean_store'] = combined['Store'].apply(
-                        lambda s: normalize_store(s) if pd.notna(s) else ''
-                    )
-                    dup_groups = combined.groupby('_clean_store')['Store'].apply(
-                        lambda x: list(x.unique())
-                    )
-                    for clean_name, store_variants in dup_groups.items():
-                        if len(store_variants) > 1:
-                            counts = {
-                                sv: len(combined[combined['Store'] == sv])
-                                for sv in store_variants
-                            }
-                            keep = max(counts, key=counts.get)
-                            drop_variants = [sv for sv in store_variants if sv != keep]
-                            for dv in drop_variants:
-                                all_warnings.append(
-                                    f"Duplicate store: '{dv}' merged into '{keep}' "
-                                    f"({counts[dv]} rows dropped, {counts[keep]} kept)"
-                                )
-                                combined = combined[combined['Store'] != dv]
-                    combined.drop(columns=['_clean_store'], inplace=True)
 
                 st.session_state.df              = combined
                 st.session_state.file_names      = new_names
@@ -352,38 +395,98 @@ with st.sidebar:
         recon = st.session_state.pdf_reconciliation
         if recon:
             mismatches = sum(1 for r in recon if r['status'] == 'mismatch')
-            label = f"\u26a0 PDF Reconciliation ({mismatches} issue{'s' if mismatches != 1 else ''})" if mismatches else f"\u2705 PDF Reconciliation ({len(recon)} PDFs)"
+            if mismatches:
+                label = f"PDF Reconciliation \u2014 {mismatches} issue{'s' if mismatches != 1 else ''}"
+            else:
+                label = f"PDF Reconciliation \u2014 {len(recon)} PDFs verified"
             with st.expander(label, expanded=mismatches > 0):
-                for r in recon:
-                    icon = "\u2705" if r['status'] == 'match' else "\u26a0\ufe0f"
-                    ht = f"\u20b1{r['header_total']:,.2f}" if r['header_total'] else "N/A"
+                # Show mismatches first, then matches
+                sorted_recon = sorted(recon, key=lambda r: (r['status'] == 'match', r['pdf']))
+                for r in sorted_recon:
+                    is_ok = r['status'] == 'match'
+                    css_class = 'recon-ok' if is_ok else 'recon-warn'
+                    dot = '\u25cf' if is_ok else '\u25b2'
+                    dot_color = '#4CAF50' if is_ok else RED
+                    ht = f"\u20b1{r['header_total']:,.2f}" if r['header_total'] else "\u2014"
                     pt = f"\u20b1{r['parsed_total']:,.2f}"
-                    var = f"{r['variance']:.1f}%" if r['header_total'] else "\u2014"
-                    color = TEXT if r['status'] == 'match' else RED
+                    var_text = f"{r['variance']:.1f}%" if r['header_total'] else "\u2014"
                     st.markdown(
-                        f'<div style="font-size:0.72rem; padding:4px 0; '
-                        f'border-bottom:1px solid {BORDER}; display:flex; '
-                        f'justify-content:space-between; color:{color};">'
-                        f'<span>{icon} {r["pdf"]}</span>'
-                        f'<span>{r["rows"]} rows &nbsp;\u00b7&nbsp; '
-                        f'Header: {ht} &nbsp;\u00b7&nbsp; Parsed: {pt} &nbsp;\u00b7&nbsp; '
-                        f'Var: {var}</span>'
+                        f'<div class="recon-row {css_class}">'
+                        f'<span><span style="color:{dot_color};font-size:0.55rem;">{dot}</span> '
+                        f'{r["pdf"]}</span>'
+                        f'<span class="recon-meta">{r["rows"]}r '
+                        f'\u00b7 {pt} \u00b7 {var_text}</span>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
 
         # ── Parsing Warnings Panel ───────────────────────────────────────────
         warn_list = st.session_state.parse_warnings
-        if warn_list:
-            with st.expander(f"\u26a0 Parsing Warnings ({len(warn_list)})", expanded=False):
-                for w in warn_list:
-                    icon = "\U0001F534" if "mismatch" in w.lower() or "lost" in w.lower() else "\U0001F7E1"
+        # Filter out noisy warnings
+        filtered_warnings = [
+            w for w in warn_list
+            if 'DO NOT TOUCH' not in w.upper()
+            and 'row skipped' not in w.lower()
+        ]
+        if filtered_warnings:
+            # Group by type for cleaner display
+            blank_amt = [w for w in filtered_warnings if 'Blank amount' in w]
+            unknown_loc = [w for w in filtered_warnings if 'Unknown location' in w]
+            other = [w for w in filtered_warnings
+                     if 'Blank amount' not in w and 'Unknown location' not in w]
+
+            with st.expander(
+                f"Parsing Notes \u2014 {len(filtered_warnings)} items",
+                expanded=False
+            ):
+                if other:
+                    for w in other:
+                        st.markdown(
+                            f'<div class="warn-item" style="color:{RED};">'
+                            f'\u25b2 {w}</div>',
+                            unsafe_allow_html=True
+                        )
+                if blank_amt:
                     st.markdown(
-                        f'<div style="font-size:0.72rem; padding:3px 0; '
-                        f'border-bottom:1px solid {BORDER}; color:{TEXT};">'
-                        f'{icon} {w}</div>',
+                        f'<div style="font-size:0.62rem; color:{MUTED}; '
+                        f'letter-spacing:0.1em; text-transform:uppercase; '
+                        f'font-weight:600; margin:8px 0 4px 0;">'
+                        f'Blank Amounts ({len(blank_amt)})</div>',
                         unsafe_allow_html=True
                     )
+                    for w in blank_amt[:10]:
+                        # Extract just item name from "Blank amount: STORE -> ITEM (UOM: X)"
+                        short = w.replace('Blank amount: ', '')
+                        st.markdown(
+                            f'<div class="warn-item">{short}</div>',
+                            unsafe_allow_html=True
+                        )
+                    if len(blank_amt) > 10:
+                        st.markdown(
+                            f'<div style="font-size:0.65rem;color:{MUTED};padding:4px 0;">'
+                            f'+ {len(blank_amt) - 10} more</div>',
+                            unsafe_allow_html=True
+                        )
+                if unknown_loc:
+                    st.markdown(
+                        f'<div style="font-size:0.62rem; color:{MUTED}; '
+                        f'letter-spacing:0.1em; text-transform:uppercase; '
+                        f'font-weight:600; margin:8px 0 4px 0;">'
+                        f'Unknown Locations ({len(unknown_loc)})</div>',
+                        unsafe_allow_html=True
+                    )
+                    for w in unknown_loc[:5]:
+                        short = w.replace('Unknown location: ', '').replace(' \u2014 set to UNKNOWN', '')
+                        st.markdown(
+                            f'<div class="warn-item">{short}</div>',
+                            unsafe_allow_html=True
+                        )
+                    if len(unknown_loc) > 5:
+                        st.markdown(
+                            f'<div style="font-size:0.65rem;color:{MUTED};padding:4px 0;">'
+                            f'+ {len(unknown_loc) - 5} more</div>',
+                            unsafe_allow_html=True
+                        )
 
         # ── Store Roster Check ───────────────────────────────────────────────
         df_check = st.session_state.df
@@ -607,9 +710,9 @@ st.markdown(f"""
 
 
 # ─── DELIVERY DATE PILLS ─────────────────────────────────────────────────────────
-del_dates = sorted(filtered['Delivery Date'].dropna().unique())
+del_dates = sorted(d for d in filtered['Delivery Date'].dropna().unique() if str(d).strip())
 if del_dates:
-    pills = "".join(f'<span class="info-pill">\U0001F4C5 Delivery: {d}</span>' for d in del_dates)
+    pills = "".join(f'<span class="info-pill">Delivery: {d}</span>' for d in del_dates)
     st.markdown(pills, unsafe_allow_html=True)
 
 st.markdown("---")
