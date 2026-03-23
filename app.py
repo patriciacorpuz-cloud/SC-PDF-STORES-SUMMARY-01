@@ -46,6 +46,13 @@ st.markdown(f"""
     background-color: {DARK};
     color: {TEXT};
   }}
+  /* Force Jost on all Streamlit widgets */
+  div[data-testid="stAppViewContainer"] *:not(.material-symbols-rounded):not([data-testid="stIconMaterial"]) {{
+    font-family: 'Jost', sans-serif !important;
+  }}
+  label, p, span, div, input, select, button, textarea, th, td {{
+    font-family: 'Jost', sans-serif !important;
+  }}
 
   /* ── Sidebar ── */
   section[data-testid="stSidebar"] {{
@@ -728,24 +735,9 @@ st.markdown(f"""
     <div class="kpi-sub">branches with orders</div>
   </div>
   <div class="kpi-card">
-    <div class="kpi-label">Unique Items</div>
-    <div class="kpi-value">{unique_items}</div>
-    <div class="kpi-sub">distinct SKUs ordered</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">Order Lines</div>
-    <div class="kpi-value">{total_lines:,}</div>
-    <div class="kpi-sub">total line items</div>
-  </div>
-  <div class="kpi-card">
     <div class="kpi-label">Total Amount</div>
     <div class="kpi-value">\u20b1{total_amount:,.0f}</div>
     <div class="kpi-sub">filtered total</div>
-  </div>
-  <div class="kpi-card">
-    <div class="kpi-label">Out of Stock</div>
-    <div class="kpi-value" style="color:{RED if oos_count > 0 else TEXT};">{oos_count}</div>
-    <div class="kpi-sub">Days to Last = 0</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
