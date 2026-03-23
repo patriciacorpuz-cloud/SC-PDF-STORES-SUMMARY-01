@@ -41,7 +41,7 @@ st.markdown(f"""
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap');
 
-  html, body, [class*="css"] {{
+  html, body, [class*="css"]:not(.material-symbols-rounded) {{
     font-family: 'Jost', sans-serif !important;
     background-color: {DARK};
     color: {TEXT};
@@ -52,38 +52,29 @@ st.markdown(f"""
     background-color: #080808 !important;
     border-right: 1px solid {BORDER};
   }}
-  section[data-testid="stSidebar"] * {{ font-family: 'Jost', sans-serif !important; }}
+  section[data-testid="stSidebar"] *:not(.material-symbols-rounded):not([data-testid="stIconMaterial"]) {{ font-family: 'Jost', sans-serif !important; }}
   section[data-testid="stSidebar"] hr {{
     margin: 16px 0 !important;
     border-color: rgba(201,169,110,0.12) !important;
   }}
-  /* ── Expander fixes ── */
-  /* The Material Symbols font fails on Streamlit Cloud, rendering
-     "arrow_right" as literal text. Make it invisible via color. */
+  /* ── Restore Material Symbols font on icon elements ── */
+  /* The global font-family override breaks Streamlit's icon rendering */
+  .material-symbols-rounded,
+  [data-testid="stIconMaterial"],
+  [data-testid="stExpanderToggleIcon"] {{
+    font-family: 'Material Symbols Rounded' !important;
+  }}
+  /* ── Expander styling ── */
   [data-testid="stExpander"] summary {{
     font-size: 0.78rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em !important;
     color: {TEXT} !important;
     padding: 10px 14px !important;
-    position: relative !important;
-  }}
-  [data-testid="stExpander"] summary > * {{
-    color: {TEXT} !important;
   }}
   [data-testid="stExpander"] summary p {{
     font-size: 0.78rem !important;
     font-weight: 600 !important;
-  }}
-  /* Make the icon text invisible — works on any Streamlit version */
-  [data-testid="stExpander"] summary span[style*="Material"],
-  [data-testid="stExpander"] summary .material-symbols-rounded,
-  [data-testid="stExpanderToggleIcon"] {{
-    color: transparent !important;
-    font-size: 0.01px !important;
-    width: 1px !important;
-    overflow: hidden !important;
-    letter-spacing: -1em !important;
   }}
   [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
