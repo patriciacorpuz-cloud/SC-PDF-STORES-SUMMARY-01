@@ -17,7 +17,7 @@ GOLD   = TEXT          # Alias — accent references in CSS now resolve to dark
 # ─── CHART LAYOUT ──────────────────────────────────────────────────────────────
 CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Jost, sans-serif", color=MUTED, size=11),
+    font=dict(family="Helvetica Neue, Helvetica, Arial, sans-serif", color=MUTED, size=11),
     margin=dict(l=0, r=10, t=10, b=10),
 )
 GRID_STYLE = dict(gridcolor=BORDER, zerolinecolor=BORDER)

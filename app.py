@@ -39,19 +39,19 @@ st.set_page_config(
 # ─── GLOBAL STYLES ─────────────────────────────────────────────────────────────
 st.markdown(f"""
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&display=swap');
 
   html, body, [class*="css"]:not(.material-symbols-rounded) {{
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
     background-color: {DARK};
     color: {TEXT};
   }}
-  /* Force Jost on all Streamlit widgets */
+  /* Force Helvetica on all Streamlit widgets */
   div[data-testid="stAppViewContainer"] *:not(.material-symbols-rounded):not([data-testid="stIconMaterial"]) {{
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
   }}
   label, p, span, div, input, select, button, textarea, th, td {{
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
   }}
 
   /* ── Sidebar ── */
@@ -59,7 +59,7 @@ st.markdown(f"""
     background-color: #F5F2ED !important;
     border-right: 1px solid {BORDER};
   }}
-  section[data-testid="stSidebar"] *:not(.material-symbols-rounded):not([data-testid="stIconMaterial"]) {{ font-family: 'Jost', sans-serif !important; }}
+  section[data-testid="stSidebar"] *:not(.material-symbols-rounded):not([data-testid="stIconMaterial"]) {{ font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important; }}
   section[data-testid="stSidebar"] hr {{
     margin: 16px 0 !important;
     border-color: {BORDER} !important;
@@ -113,7 +113,7 @@ st.markdown(f"""
     color: {ACCENT};
   }}
   .abaca-nav-title {{
-    font-family: 'Jost', sans-serif;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     font-size: 0.85rem; font-weight: 400;
     color: rgba(240,237,232,0.6); letter-spacing: 0.06em;
   }}
@@ -165,13 +165,13 @@ st.markdown(f"""
     background: #F5F2ED !important; color: {MUTED} !important;
     font-size: 0.7rem !important; letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
     border-bottom: 1px solid {BORDER} !important;
     padding: 10px 12px !important;
   }}
   .stDataFrame td {{
     font-size: 0.875rem !important;
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
     border-bottom: 1px solid {BORDER} !important;
     padding: 8px 12px !important;
   }}
@@ -182,7 +182,7 @@ st.markdown(f"""
     gap: 0 !important; background: transparent !important;
   }}
   .stTabs [data-baseweb="tab"] {{
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
     font-size: 0.75rem !important; font-weight: 600 !important;
     letter-spacing: 0.1em !important; text-transform: uppercase !important;
     color: {MUTED} !important; padding: 12px 20px !important;
@@ -211,7 +211,7 @@ st.markdown(f"""
 
   /* ── Buttons ── */
   .stButton button, .stDownloadButton button {{
-    font-family: 'Jost', sans-serif !important;
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif !important;
     letter-spacing: 0.12em !important; text-transform: uppercase !important;
     font-size: 0.8rem !important; font-weight: 600 !important;
     background: transparent !important;
