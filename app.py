@@ -65,15 +65,15 @@ st.markdown(f"""
   }}
   /* ── Expander styling ── */
   [data-testid="stExpander"] summary {{
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.02em !important;
     color: {TEXT} !important;
     padding: 10px 14px !important;
   }}
   [data-testid="stExpander"] summary p {{
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
+    font-size: 0.875rem !important;
+    font-weight: 500 !important;
   }}
   [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
@@ -85,7 +85,7 @@ st.markdown(f"""
     padding: 0 14px 10px 14px !important;
   }}
   section[data-testid="stSidebar"] [data-testid="stAlert"] {{
-    font-size: 0.72rem !important;
+    font-size: 0.8rem !important;
     padding: 8px 12px !important;
     border-radius: 3px !important;
   }}
@@ -101,14 +101,14 @@ st.markdown(f"""
   }}
   .abaca-nav-brand {{
     font-family: 'Manrope', sans-serif;
-    font-size: 0.72rem; font-weight: 700;
-    letter-spacing: 0.25em; text-transform: uppercase;
+    font-size: 0.85rem; font-weight: 700;
+    letter-spacing: 0.2em; text-transform: uppercase;
     color: {ACCENT};
   }}
   .abaca-nav-title {{
     font-family: 'Jost', sans-serif;
-    font-size: 0.8rem; font-weight: 400;
-    color: #F0EDE8; letter-spacing: 0.08em;
+    font-size: 0.85rem; font-weight: 400;
+    color: rgba(240,237,232,0.6); letter-spacing: 0.06em;
   }}
 
   /* ── Legacy header (hidden, replaced by nav) ── */
@@ -124,8 +124,8 @@ st.markdown(f"""
   }}
   .kpi-card:hover {{ border-color: {MUTED}; }}
   .kpi-label {{
-    font-size: 0.58rem; font-weight: 700;
-    letter-spacing: 0.18em; text-transform: uppercase;
+    font-size: 0.7rem; font-weight: 700;
+    letter-spacing: 0.15em; text-transform: uppercase;
     color: {MUTED}; margin-bottom: 4px;
   }}
   .kpi-value {{
@@ -134,14 +134,14 @@ st.markdown(f"""
     line-height: 1.2;
   }}
   .kpi-sub {{
-    font-size: 0.65rem; color: {MUTED}; margin-top: 2px;
+    font-size: 0.75rem; color: {MUTED}; margin-top: 2px;
     letter-spacing: 0.02em;
   }}
 
   /* ── Section Labels ── */
   .section-label {{
-    font-size: 0.6rem; font-weight: 700;
-    letter-spacing: 0.22em; text-transform: uppercase;
+    font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
     color: {TEXT}; margin-bottom: 12px;
     position: relative; padding-left: 12px;
   }}
@@ -156,17 +156,17 @@ st.markdown(f"""
   .stDataFrame {{ border: 1px solid {BORDER} !important; border-radius: 3px; }}
   .stDataFrame th {{
     background: #F5F2ED !important; color: {MUTED} !important;
-    font-size: 0.6rem !important; letter-spacing: 0.12em !important;
+    font-size: 0.7rem !important; letter-spacing: 0.1em !important;
     text-transform: uppercase !important;
     font-family: 'Jost', sans-serif !important;
     border-bottom: 1px solid {BORDER} !important;
-    padding: 8px 10px !important;
+    padding: 10px 12px !important;
   }}
   .stDataFrame td {{
-    font-size: 0.78rem !important;
+    font-size: 0.875rem !important;
     font-family: 'Jost', sans-serif !important;
     border-bottom: 1px solid {BORDER} !important;
-    padding: 6px 10px !important;
+    padding: 8px 12px !important;
   }}
 
   /* ── Tabs ── */
@@ -176,9 +176,9 @@ st.markdown(f"""
   }}
   .stTabs [data-baseweb="tab"] {{
     font-family: 'Jost', sans-serif !important;
-    font-size: 0.65rem !important; font-weight: 600 !important;
-    letter-spacing: 0.14em !important; text-transform: uppercase !important;
-    color: {MUTED} !important; padding: 10px 20px !important;
+    font-size: 0.75rem !important; font-weight: 600 !important;
+    letter-spacing: 0.1em !important; text-transform: uppercase !important;
+    color: {MUTED} !important; padding: 12px 20px !important;
     border: none !important; border-bottom: 2px solid transparent !important;
     background: transparent !important;
     transition: color 0.15s, border-color 0.15s;
@@ -196,7 +196,7 @@ st.markdown(f"""
     border-radius: 3px !important; padding: 8px !important;
     background: {CARD} !important;
   }}
-  .stRadio label {{ font-size: 0.78rem !important; }}
+  .stRadio label {{ font-size: 0.875rem !important; }}
   .stMultiSelect [data-baseweb="tag"] {{
     background: rgba(26,26,26,0.06) !important;
     border: 1px solid rgba(26,26,26,0.15) !important; border-radius: 2px !important;
@@ -206,7 +206,7 @@ st.markdown(f"""
   .stButton button, .stDownloadButton button {{
     font-family: 'Jost', sans-serif !important;
     letter-spacing: 0.12em !important; text-transform: uppercase !important;
-    font-size: 0.68rem !important; font-weight: 600 !important;
+    font-size: 0.8rem !important; font-weight: 600 !important;
     background: transparent !important;
     border: 1px solid {TEXT} !important;
     color: {TEXT} !important; border-radius: 2px !important;
@@ -222,8 +222,8 @@ st.markdown(f"""
     background: rgba(229,57,53,0.08);
     border: 1px solid rgba(229,57,53,0.3);
     border-radius: 2px;
-    padding: 1px 6px;
-    font-size: 0.6rem;
+    padding: 2px 8px;
+    font-size: 0.7rem;
     font-weight: 700;
     color: {RED};
     letter-spacing: 0.1em;
@@ -235,8 +235,8 @@ st.markdown(f"""
     background: rgba(26,26,26,0.04);
     border: 1px solid rgba(26,26,26,0.12);
     border-radius: 2px;
-    padding: 3px 10px;
-    font-size: 0.68rem;
+    padding: 4px 12px;
+    font-size: 0.8rem;
     color: {TEXT};
     letter-spacing: 0.06em;
     margin-right: 6px;
@@ -253,16 +253,16 @@ st.markdown(f"""
   /* ── Reconciliation Panel ── */
   .recon-row {{
     display: flex; justify-content: space-between; align-items: center;
-    font-size: 0.7rem; padding: 4px 0;
+    font-size: 0.8rem; padding: 4px 0;
     border-bottom: 1px solid {BORDER};
   }}
   .recon-ok {{ color: {TEXT}; }}
   .recon-warn {{ color: {RED}; }}
-  .recon-meta {{ color: {MUTED}; font-size: 0.65rem; }}
+  .recon-meta {{ color: {MUTED}; font-size: 0.75rem; }}
 
   /* ── Warning list ── */
   .warn-item {{
-    font-size: 0.7rem; padding: 3px 0;
+    font-size: 0.8rem; padding: 4px 0;
     border-bottom: 1px solid {BORDER};
     color: {TEXT};
   }}
@@ -290,11 +290,11 @@ if 'pdf_reconciliation' not in st.session_state:
 with st.sidebar:
     st.markdown(f"""
     <div style="padding:8px 0 20px 0;">
-      <div style="font-family:'Manrope',sans-serif; font-size:0.6rem; font-weight:700;
-                  letter-spacing:0.25em; color:{MUTED}; text-transform:uppercase;">
+      <div style="font-family:'Manrope',sans-serif; font-size:0.75rem; font-weight:700;
+                  letter-spacing:0.2em; color:{MUTED}; text-transform:uppercase;">
         The Abaca Group
       </div>
-      <div style="font-size:0.95rem; font-weight:600; color:{TEXT}; margin-top:4px;">
+      <div style="font-size:1rem; font-weight:600; color:{TEXT}; margin-top:4px;">
         Supply Chain
       </div>
       <div style="width:28px; height:2px; background:{ACCENT}; margin-top:8px;"></div>
@@ -303,7 +303,7 @@ with st.sidebar:
 
     # ── PDF Input — Google Drive Link ────────────────────────────────────────
     st.markdown(
-        f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
+        f'<div style="font-size:0.75rem; font-weight:600; letter-spacing:0.15em; '
         f'text-transform:uppercase; color:{GOLD}; margin-bottom:8px;">'
         f'Load PDFs from Google Drive</div>',
         unsafe_allow_html=True
@@ -316,7 +316,7 @@ with st.sidebar:
         key="drive_link_input",
     )
     st.markdown(
-        f'<div style="font-size:0.62rem; color:{MUTED}; margin-top:-8px; margin-bottom:8px;">'
+        f'<div style="font-size:0.75rem; color:{MUTED}; margin-top:-8px; margin-bottom:8px;">'
         f'Share the Drive folder with the service account email (see Store Checklist tab for details)</div>',
         unsafe_allow_html=True,
     )
@@ -395,10 +395,10 @@ with st.sidebar:
         st.markdown(f"""
         <div style="margin-top:12px; padding:12px 14px; background:{CARD};
                     border:1px solid {BORDER}; border-left:3px solid {GOLD}; border-radius:3px;">
-          <div style="font-size:0.6rem; letter-spacing:0.15em; color:{MUTED};
+          <div style="font-size:0.75rem; letter-spacing:0.15em; color:{MUTED};
                       text-transform:uppercase; font-weight:600; margin-bottom:6px;">Loaded</div>
           <div style="font-size:1.2rem; font-weight:700; color:{TEXT};">{n} PDF{'s' if n != 1 else ''}</div>
-          <div style="font-size:0.72rem; color:{MUTED}; margin-top:6px;">
+          <div style="font-size:0.85rem; color:{MUTED}; margin-top:6px;">
             {df_loaded['Store'].nunique() if not df_loaded.empty else 0} stores
             &nbsp;\u00b7&nbsp; Delivery: {del_label}
           </div>
@@ -418,7 +418,7 @@ with st.sidebar:
                 label = f"PDF Reconciliation \u2014 {len(recon)} PDFs verified"
             with st.expander(label, expanded=mismatches > 0):
                 st.markdown(
-                    f'<div style="font-size:0.65rem; color:{MUTED}; margin-bottom:8px;">'
+                    f'<div style="font-size:0.8rem; color:{MUTED}; margin-bottom:8px;">'
                     f'Compares parsed totals against PDF header amounts to catch missing rows</div>',
                     unsafe_allow_html=True
                 )
@@ -434,7 +434,7 @@ with st.sidebar:
                     var_text = f"{r['variance']:.1f}%" if r['header_total'] else "\u2014"
                     st.markdown(
                         f'<div class="recon-row {css_class}">'
-                        f'<span><span style="color:{dot_color};font-size:0.55rem;">{dot}</span> '
+                        f'<span><span style="color:{dot_color};font-size:0.85rem;">{dot}</span> '
                         f'{r["pdf"]}</span>'
                         f'<span class="recon-meta">{r["rows"]}r '
                         f'\u00b7 {pt} \u00b7 {var_text}</span>'
@@ -460,7 +460,7 @@ with st.sidebar:
                 expanded=False
             ):
                 st.markdown(
-                    f'<div style="font-size:0.65rem; color:{MUTED}; margin-bottom:8px;">'
+                    f'<div style="font-size:0.8rem; color:{MUTED}; margin-bottom:8px;">'
                     f'Items with missing data from the PDFs \u2014 '
                     f'most are zero-cost supplies or first-row items without a location</div>',
                     unsafe_allow_html=True
@@ -482,7 +482,7 @@ with st.sidebar:
                             item_part = parts[1].split(' (UOM:')[0]
                             blank_items.add(item_part)
                     st.markdown(
-                        f'<div style="font-size:0.65rem; color:{MUTED}; '
+                        f'<div style="font-size:0.8rem; color:{MUTED}; '
                         f'margin:6px 0 4px 0;">'
                         f'<strong style="color:{TEXT};">Blank Amounts</strong> '
                         f'\u00b7 {len(blank_amt)} rows across {len(blank_items)} items'
@@ -498,7 +498,7 @@ with st.sidebar:
                         if len(parts) == 2:
                             unknown_items.add(parts[1])
                     st.markdown(
-                        f'<div style="font-size:0.65rem; color:{MUTED}; '
+                        f'<div style="font-size:0.8rem; color:{MUTED}; '
                         f'margin:6px 0 4px 0;">'
                         f'<strong style="color:{TEXT};">Unknown Locations</strong> '
                         f'\u00b7 {len(unknown_loc)} rows across {len(unknown_items)} items'
@@ -508,7 +508,7 @@ with st.sidebar:
                     )
                     for item in sorted(unknown_items):
                         st.markdown(
-                            f'<div style="font-size:0.68rem; color:{TEXT}; '
+                            f'<div style="font-size:0.85rem; color:{TEXT}; '
                             f'padding:2px 0 2px 8px; '
                             f'border-left:2px solid {BORDER};">'
                             f'{item}</div>',
@@ -538,7 +538,7 @@ with st.sidebar:
 
         with st.expander(f"Store Roster ({len(store_counts)} stores)", expanded=False):
             st.markdown(
-                f'<div style="font-size:0.65rem; color:{MUTED}; margin-bottom:8px;">'
+                f'<div style="font-size:0.8rem; color:{MUTED}; margin-bottom:8px;">'
                 f'All stores parsed from uploaded PDFs \u2014 '
                 f'check for missing or duplicate uploads</div>',
                 unsafe_allow_html=True
@@ -550,19 +550,19 @@ with st.sidebar:
                     f'border-bottom:1px solid {BORDER}; display:flex; '
                     f'justify-content:space-between;">'
                     f'<span style="color:{TEXT};">{row["Store"]}</span>'
-                    f'<span style="color:{flag_color}; font-size:0.68rem;">{row["Flag"]}</span>'
+                    f'<span style="color:{flag_color}; font-size:0.85rem;">{row["Flag"]}</span>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
             st.markdown(
-                f'<div style="font-size:0.65rem; color:{MUTED}; margin-top:10px; '
+                f'<div style="font-size:0.8rem; color:{MUTED}; margin-top:10px; '
                 f'letter-spacing:0.08em; text-transform:uppercase; font-weight:600;">'
                 f'{len(st.session_state.file_names)} files uploaded</div>',
                 unsafe_allow_html=True
             )
             for fname in sorted(st.session_state.file_names):
                 st.markdown(
-                    f'<div style="font-size:0.68rem; color:{MUTED}; padding:2px 0;">'
+                    f'<div style="font-size:0.85rem; color:{MUTED}; padding:2px 0;">'
                     f'\u00b7 {fname}</div>',
                     unsafe_allow_html=True
                 )
@@ -603,7 +603,7 @@ with st.sidebar:
     # ── Load Saved Session ───────────────────────────────────────────────────
     st.markdown("---")
     st.markdown(
-        f'<div style="font-size:0.62rem; font-weight:600; letter-spacing:0.15em; '
+        f'<div style="font-size:0.75rem; font-weight:600; letter-spacing:0.15em; '
         f'text-transform:uppercase; color:{MUTED}; margin-bottom:6px;">Restore session</div>',
         unsafe_allow_html=True
     )
@@ -779,7 +779,7 @@ tab1, tab2, tab5, tab6, tab7 = st.tabs([
 with tab1:
     st.markdown(f"""
     <div style="margin-bottom:12px;">
-      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+      <div style="font-size:0.8rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
         Select a location \u2192 get a ready-to-print pick list for your pickers
       </div>
@@ -868,7 +868,7 @@ with tab1:
                 key=f"dl_picklist_{sel_loc}"
             )
             st.markdown(
-                f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:6px;">'
+                f'<div style="font-size:0.85rem; color:{MUTED}; margin-top:6px;">'
                 '\u2b06 Download \u2192 open in browser \u2192 Ctrl+P to print</div>',
                 unsafe_allow_html=True
             )
@@ -880,7 +880,7 @@ with tab1:
 with tab2:
     st.markdown(f"""
     <div style="margin-bottom:12px;">
-      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+      <div style="font-size:0.8rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
         Select an item \u2192 see total qty + store breakdown \u2014 for production make-to-order
       </div>
@@ -891,7 +891,7 @@ with tab2:
     st.markdown(f'<div class="section-label">Multi-Item Allocation \u2014 Combined Report</div>',
                 unsafe_allow_html=True)
     st.markdown(
-        f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:10px;">'
+        f'<div style="font-size:0.85rem; color:{MUTED}; margin-bottom:10px;">'
         f'Select multiple items \u2192 review store breakdowns \u2192 download one combined PDF</div>',
         unsafe_allow_html=True,
     )
@@ -972,7 +972,7 @@ with tab2:
 with tab5:
     st.markdown(f"""
     <div style="margin-bottom:16px;">
-      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+      <div style="font-size:0.8rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
         Flag undelivered items \u00b7 system auto-fills which stores ordered it \u00b7 add remarks \u00b7 generate report
       </div>
@@ -1082,7 +1082,7 @@ with tab5:
           <div style="font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase;">
             No undelivered items added yet
           </div>
-          <div style="font-size:0.72rem; margin-top:6px;">
+          <div style="font-size:0.85rem; margin-top:6px;">
             Select an item above and click \u2795 Add to Report
           </div>
         </div>
@@ -1139,7 +1139,7 @@ with tab5:
 
         with bc3:
             st.markdown(
-                f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:8px;">'
+                f'<div style="font-size:0.85rem; color:{MUTED}; margin-top:8px;">'
                 'Download \u2192 open in browser \u2192 Ctrl+P to print</div>',
                 unsafe_allow_html=True
             )
@@ -1149,7 +1149,7 @@ with tab5:
     # ── Section 2: ITEMS NOT AVAILABLE TODAY ─────────────────────────────────
     st.markdown(f'<div class="section-label">Items Not Available Today</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:12px;">'
+        f'<div style="font-size:0.85rem; color:{MUTED}; margin-bottom:12px;">'
         f'Select items one by one \u2014 they are instantly added to the list below. '
         f'Add remarks inline after adding. Generate the Allocation Guide PDF when ready.</div>',
         unsafe_allow_html=True,
@@ -1250,7 +1250,7 @@ with tab5:
         st.markdown(f"""
         <div style="padding:18px; text-align:center; color:{MUTED};
                     border:1px dashed {BORDER}; border-radius:4px; margin-top:8px;">
-          <div style="font-size:0.72rem; letter-spacing:0.08em; text-transform:uppercase;">
+          <div style="font-size:0.85rem; letter-spacing:0.08em; text-transform:uppercase;">
             No unavailable items added yet \u2014 select items above
           </div>
         </div>
@@ -1263,7 +1263,7 @@ with tab5:
 with tab6:
     st.markdown(f"""
     <div style="margin-bottom:16px;">
-      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+      <div style="font-size:0.8rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
         Add orders that came in verbally or by hand \u2014 not in any uploaded PDF
       </div>
@@ -1325,7 +1325,7 @@ with tab6:
           <div style="font-size:0.75rem; letter-spacing:0.1em; text-transform:uppercase;">
             No manual orders added yet
           </div>
-          <div style="font-size:0.72rem; margin-top:6px;">
+          <div style="font-size:0.85rem; margin-top:6px;">
             Use the form above to add verbal or hand-written orders
           </div>
         </div>
@@ -1370,7 +1370,7 @@ with tab6:
     # ── Generate Combined Report PDF ─────────────────────────────────────────
     st.markdown(f'<div class="section-label">Generate Combined Report</div>', unsafe_allow_html=True)
     st.markdown(
-        f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:12px;">'
+        f'<div style="font-size:0.85rem; color:{MUTED}; margin-bottom:12px;">'
         f'Combines unavailable items from the Undelivered Report tab + manual orders from this tab into one PDF.</div>',
         unsafe_allow_html=True,
     )
@@ -1380,7 +1380,7 @@ with tab6:
 
     if not has_undelivered and not has_manual:
         st.markdown(
-            f'<div style="font-size:0.72rem; color:{MUTED}; padding:12px; '
+            f'<div style="font-size:0.85rem; color:{MUTED}; padding:12px; '
             f'border:1px dashed {BORDER}; border-radius:4px; text-align:center;">'
             f'No data to generate report \u2014 add undelivered items in the Undelivered Report tab '
             f'and/or add manual orders above.</div>',
@@ -1393,7 +1393,7 @@ with tab6:
         if has_manual:
             summary_parts.append(f"{len(st.session_state.manual_orders)} manual order(s)")
         st.markdown(
-            f'<div style="font-size:0.72rem; color:{TEXT}; margin-bottom:8px;">'
+            f'<div style="font-size:0.85rem; color:{TEXT}; margin-bottom:8px;">'
             f'Report will include: {" + ".join(summary_parts)}</div>',
             unsafe_allow_html=True,
         )
@@ -1421,7 +1421,7 @@ with tab6:
             key="mo_combined_pdf",
         )
         st.markdown(
-            f'<div style="font-size:0.7rem; color:{MUTED}; margin-top:6px;">'
+            f'<div style="font-size:0.85rem; color:{MUTED}; margin-top:6px;">'
             f'Uses Report Settings from the Undelivered Report tab (title, dates, prepared by)</div>',
             unsafe_allow_html=True,
         )
@@ -1433,7 +1433,7 @@ with tab6:
 with tab7:
     st.markdown(f"""
     <div style="margin-bottom:12px;">
-      <div style="font-size:0.65rem; letter-spacing:0.15em; color:{MUTED};
+      <div style="font-size:0.8rem; letter-spacing:0.15em; color:{MUTED};
                   text-transform:uppercase; font-weight:600;">
         Master store list from Google Sheet \u2192 compare against parsed PDFs \u2192 see who's missing
       </div>
@@ -1476,7 +1476,7 @@ with tab7:
           <div style="font-size:0.8rem; letter-spacing:0.1em; text-transform:uppercase;">
             No master store list loaded
           </div>
-          <div style="font-size:0.72rem; margin-top:8px;">
+          <div style="font-size:0.85rem; margin-top:8px;">
             Check that <code>[gcp_service_account]</code> is configured in Streamlit secrets
             and the service account has access to the Sheet.
           </div>
@@ -1514,7 +1514,7 @@ with tab7:
                     f'<div style="display:flex; align-items:center; gap:0; '
                     f'background:rgba(26,26,26,0.04); border:1px solid {BORDER}; '
                     f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
-                    f'font-size:0.68rem; font-weight:700; letter-spacing:0.1em; '
+                    f'font-size:0.85rem; font-weight:700; letter-spacing:0.1em; '
                     f'text-transform:uppercase; color:{GOLD};">'
                     f'<span style="flex:3;">{title}</span>'
                     f'<span style="flex:1; text-align:center;">SUBMITTED</span>'
@@ -1525,7 +1525,7 @@ with tab7:
                     f'<div style="display:flex; align-items:center; gap:0; '
                     f'background:rgba(26,26,26,0.04); border:1px solid {BORDER}; '
                     f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
-                    f'font-size:0.68rem; font-weight:700; letter-spacing:0.1em; '
+                    f'font-size:0.85rem; font-weight:700; letter-spacing:0.1em; '
                     f'text-transform:uppercase; color:{GOLD};">'
                     f'<span style="flex:3;">{title}</span>'
                     f'<span style="flex:1; text-align:center;">BAR</span>'
@@ -1542,7 +1542,7 @@ with tab7:
                     st.markdown(
                         f'<div style="display:flex; align-items:center; gap:0; '
                         f'padding:4px 12px; border-bottom:1px solid {BORDER}; '
-                        f'font-size:0.78rem; color:{name_color};">'
+                        f'font-size:0.9rem; color:{name_color};">'
                         f'<span style="flex:3;">{store}</span>'
                         f'<span style="flex:1; text-align:center; font-size:0.85rem;">{icon}</span>'
                         f'</div>',
@@ -1557,7 +1557,7 @@ with tab7:
                     st.markdown(
                         f'<div style="display:flex; align-items:center; gap:0; '
                         f'padding:4px 12px; border-bottom:1px solid {BORDER}; '
-                        f'font-size:0.78rem; color:{name_color};">'
+                        f'font-size:0.9rem; color:{name_color};">'
                         f'<span style="flex:3;">{store}</span>'
                         f'<span style="flex:1; text-align:center; font-size:0.85rem;">{bar_icon}</span>'
                         f'<span style="flex:1; text-align:center; font-size:0.85rem;">{kit_icon}</span>'
@@ -1596,7 +1596,7 @@ with tab7:
                 unsafe_allow_html=True,
             )
             st.markdown(
-                f'<div style="font-size:0.7rem; color:{MUTED}; margin-bottom:8px;">'
+                f'<div style="font-size:0.85rem; color:{MUTED}; margin-bottom:8px;">'
                 f'These stores appeared in parsed PDFs but do not match any name in the '
                 f'master list. Check for renamed stores or typos.</div>',
                 unsafe_allow_html=True,
