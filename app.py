@@ -765,10 +765,9 @@ st.markdown("---")
 
 
 # ─── TABS ────────────────────────────────────────────────────────────────────────
-tab1, tab2, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab5, tab6, tab7 = st.tabs([
     "  \U0001F4CB  PICK LIST  ",
     "  \U0001F4E6  ITEM ALLOCATION  ",
-    "  \U0001F4CA  ALL ORDERS  ",
     "  \U0001F6AB  UNDELIVERED REPORT  ",
     "  \U0001F4DD  MANUAL ORDERS  ",
     "  \u2705  STORE CHECKLIST  ",
@@ -826,11 +825,11 @@ with tab1:
             if show_store_breakdown:
                 display = (
                     df_loc.groupby(['Store', 'Item Description', 'PLU Code', 'UOM'])
-                    .agg(Qty=('Order Qty', 'sum'), DaysToLast=('Days to Last', 'min'))
+                    .agg(Qty=('Order Qty', 'sum'))
                     .reset_index()
                     .sort_values(['Item Description', 'Store'])
                 )
-                display.columns = ['Store', 'Item Description', 'PLU Code', 'UOM', 'Qty', 'Days to Last']
+                display.columns = ['Store', 'Item Description', 'PLU Code', 'UOM', 'Qty']
                 st.dataframe(display, use_container_width=True, hide_index=True, height=420)
             else:
                 display = (
@@ -888,51 +887,6 @@ with tab2:
       </div>
     </div>
     """, unsafe_allow_html=True)
-
-    ia_c1, ia_c2 = st.columns([3, 1])
-
-    with ia_c1:
-        st.markdown(f'<div class="section-label">All Items \u2014 Total Qty Across All Stores</div>',
-                    unsafe_allow_html=True)
-        item_summary = (
-            filtered.groupby(['Item Description', 'UOM', 'Location'])
-            .agg(
-                Total_Qty       = ('Order Qty',    'sum'),
-                Stores_Ordering = ('Store',        'nunique'),
-                Total_Amount    = ('Total Amount', 'sum'),
-            )
-            .reset_index()
-            .sort_values('Total_Qty', ascending=False)
-        )
-        item_summary.columns = ['Item', 'UOM', 'Location', 'Total Qty', 'Stores Ordering', 'Total Amount (\u20b1)']
-        item_summary['Total Qty'] = item_summary['Total Qty'].apply(
-            lambda x: int(x) if pd.notna(x) else 0)
-        item_summary['Total Amount (\u20b1)'] = item_summary['Total Amount (\u20b1)'].map(
-            lambda x: f'{x:,.2f}' if pd.notna(x) else '\u2014')
-        st.dataframe(item_summary, use_container_width=True, hide_index=True, height=400)
-
-    with ia_c2:
-        top10 = item_summary.nlargest(10, 'Total Qty')
-        if not top10.empty:
-            fig = go.Figure(go.Bar(
-                x=top10['Total Qty'],
-                y=top10['Item'],
-                orientation='h',
-                marker=dict(
-                    color=top10['Total Qty'],
-                    colorscale=[[0, "#2A2A2A"], [1, GOLD]],
-                    line=dict(width=0)
-                ),
-                hovertemplate='<b>%{y}</b><br>Qty: %{x}<extra></extra>'
-            ))
-            fig.update_layout(
-                **CHART_LAYOUT, height=400,
-                xaxis=dict(title="", **GRID_STYLE),
-                yaxis=dict(title="", tickfont=dict(size=9), autorange="reversed"),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-    st.markdown("---")
 
     # ── Multi-Item Allocation ────────────────────────────────────────────────
     st.markdown(f'<div class="section-label">Multi-Item Allocation \u2014 Combined Report</div>',
@@ -1010,60 +964,6 @@ with tab2:
             file_name=f"COMBINED_ALLOCATION_{del_multi}.pdf",
             mime="application/pdf",
             key="dl_multi_alloc",
-        )
-
-
-# ══════════════════════════════════════════════════════════════════════════════════
-# TAB 4 — ALL ORDERS (Full Detail)
-# ══════════════════════════════════════════════════════════════════════════════════
-with tab4:
-    st.markdown(f"""
-    <div style="font-size:0.72rem; color:{MUTED}; margin-bottom:14px;">
-      Complete extracted data from all uploaded PDFs
-      {f' &nbsp;\u00b7&nbsp; <span class="out-badge">OUT</span> = Days to Last is 0 (out of stock)' if oos_count > 0 else ''}
-    </div>
-    """, unsafe_allow_html=True)
-
-    display_cols = [
-        'Store', 'Ordered By', 'Order Date', 'Delivery Date',
-        'Location', 'PLU Code', 'Item Description',
-        'Order Qty', 'UOM', 'Total Amount', 'Days to Last'
-    ]
-    display_cols = [c for c in display_cols if c in filtered.columns]
-
-    all_orders_display = filtered[display_cols].sort_values(
-        ['Store', 'Location', 'Item Description']
-    ).copy()
-
-    st.dataframe(
-        all_orders_display,
-        use_container_width=True, hide_index=True, height=550,
-        column_config={
-            "Days to Last": st.column_config.NumberColumn(
-                "Days to Last",
-                help="0 = OUT OF STOCK",
-                format="%.2f",
-            ),
-        }
-    )
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    e1, e2 = st.columns(2)
-    with e1:
-        csv = filtered.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "\u2b07 Export Filtered (CSV)",
-            data=csv,
-            file_name="SC_PDF_STORES_SUMMARY_01_filtered.csv",
-            mime="text/csv"
-        )
-    with e2:
-        csv_all = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "\u2b07 Export All Orders (CSV)",
-            data=csv_all,
-            file_name="SC_PDF_STORES_SUMMARY_01_all.csv",
-            mime="text/csv"
         )
 
 
