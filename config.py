@@ -4,19 +4,20 @@ from pathlib import Path
 import base64
 
 # ─── DESIGN TOKENS ─────────────────────────────────────────────────────────────
-GOLD   = "#C9A96E"
-DARK   = "#0D0D0D"
-CARD   = "#141414"
-BORDER = "#2A2A2A"
-TEXT   = "#F0EDE8"
-MUTED  = "#888880"
-GREEN  = "#4CAF50"
-RED    = "#E53935"
+ACCENT = "#C9A96E"     # Gold accent — nav bar brand, subtle highlights
+DARK   = "#FAF8F5"     # Page background — warm off-white
+CARD   = "#FFFFFF"     # Card backgrounds — white
+BORDER = "#E5E0DA"     # Borders — warm grey
+TEXT   = "#1A1A1A"     # Main text — dark
+MUTED  = "#888880"     # Secondary text
+GREEN  = "#4CAF50"     # Success
+RED    = "#E53935"     # Error
+GOLD   = TEXT          # Alias — accent references in CSS now resolve to dark
 
 # ─── CHART LAYOUT ──────────────────────────────────────────────────────────────
 CHART_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Jost, sans-serif", color=TEXT, size=11),
+    font=dict(family="Jost, sans-serif", color=MUTED, size=11),
     margin=dict(l=0, r=10, t=10, b=10),
 )
 GRID_STYLE = dict(gridcolor=BORDER, zerolinecolor=BORDER)

@@ -12,7 +12,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 
 from config import (
-    GOLD, DARK, CARD, BORDER, TEXT, MUTED, GREEN, RED, LOGO_B64,
+    GOLD, DARK, CARD, BORDER, TEXT, MUTED, GREEN, RED, ACCENT, LOGO_B64,
     CHART_LAYOUT, GRID_STYLE,
 )
 from pdf_parser import parse_pdf, resolve_empty_locations, clean_numeric
@@ -49,16 +49,15 @@ st.markdown(f"""
 
   /* ── Sidebar ── */
   section[data-testid="stSidebar"] {{
-    background-color: #080808 !important;
+    background-color: #F5F2ED !important;
     border-right: 1px solid {BORDER};
   }}
   section[data-testid="stSidebar"] *:not(.material-symbols-rounded):not([data-testid="stIconMaterial"]) {{ font-family: 'Jost', sans-serif !important; }}
   section[data-testid="stSidebar"] hr {{
     margin: 16px 0 !important;
-    border-color: rgba(201,169,110,0.12) !important;
+    border-color: {BORDER} !important;
   }}
   /* ── Restore Material Symbols font on icon elements ── */
-  /* The global font-family override breaks Streamlit's icon rendering */
   .material-symbols-rounded,
   [data-testid="stIconMaterial"],
   [data-testid="stExpanderToggleIcon"] {{
@@ -79,47 +78,51 @@ st.markdown(f"""
   [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
     border-radius: 4px !important;
-    background: rgba(20,20,20,0.6) !important;
+    background: {CARD} !important;
     margin-bottom: 6px !important;
   }}
   [data-testid="stExpander"] [data-testid="stExpanderDetails"] {{
     padding: 0 14px 10px 14px !important;
   }}
-  /* Hide default Streamlit alert boxes in sidebar after loading */
   section[data-testid="stSidebar"] [data-testid="stAlert"] {{
     font-size: 0.72rem !important;
     padding: 8px 12px !important;
     border-radius: 3px !important;
   }}
 
-  /* ── Header ── */
-  .abaca-header {{
-    display: flex; align-items: flex-end; gap: 20px;
-    border-bottom: 1px solid {BORDER};
-    padding-bottom: 20px; margin-bottom: 28px;
+  /* ── Top Nav Bar ── */
+  .abaca-nav {{
+    background: #1A1A1A;
+    margin: -1rem -1rem 28px -1rem;
+    padding: 14px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
   }}
-  .abaca-wordmark {{
+  .abaca-nav-brand {{
     font-family: 'Manrope', sans-serif;
-    font-size: 0.6rem; font-weight: 700;
-    letter-spacing: 0.3em; text-transform: uppercase;
-    color: {GOLD}; opacity: 0.7;
+    font-size: 0.72rem; font-weight: 700;
+    letter-spacing: 0.25em; text-transform: uppercase;
+    color: {ACCENT};
   }}
-  .abaca-title {{
+  .abaca-nav-title {{
     font-family: 'Jost', sans-serif;
-    font-size: 1.5rem; font-weight: 500;
-    color: {TEXT}; letter-spacing: 0.06em; margin: 0;
+    font-size: 0.8rem; font-weight: 400;
+    color: #F0EDE8; letter-spacing: 0.08em;
   }}
-  .gold-line {{ width: 32px; height: 2px; background: {GOLD}; margin: 8px 0 0 0; }}
+
+  /* ── Legacy header (hidden, replaced by nav) ── */
+  .abaca-header {{ display: none; }}
 
   /* ── KPI Cards ── */
   .kpi-row {{ display: flex; gap: 12px; margin-bottom: 24px; }}
   .kpi-card {{
     flex: 1; background: {CARD};
-    border: 1px solid {BORDER}; border-top: 2px solid {GOLD};
+    border: 1px solid {BORDER}; border-top: 2px solid {TEXT};
     border-radius: 3px; padding: 14px 16px;
     transition: border-color 0.2s;
   }}
-  .kpi-card:hover {{ border-color: rgba(201,169,110,0.4); }}
+  .kpi-card:hover {{ border-color: {MUTED}; }}
   .kpi-label {{
     font-size: 0.58rem; font-weight: 700;
     letter-spacing: 0.18em; text-transform: uppercase;
@@ -139,20 +142,20 @@ st.markdown(f"""
   .section-label {{
     font-size: 0.6rem; font-weight: 700;
     letter-spacing: 0.22em; text-transform: uppercase;
-    color: {GOLD}; margin-bottom: 12px;
+    color: {TEXT}; margin-bottom: 12px;
     position: relative; padding-left: 12px;
   }}
   .section-label::before {{
     content: '';
     position: absolute; left: 0; top: 1px;
     width: 3px; height: 100%;
-    background: {GOLD}; border-radius: 1px;
+    background: {TEXT}; border-radius: 1px;
   }}
 
   /* ── Data Tables ── */
   .stDataFrame {{ border: 1px solid {BORDER} !important; border-radius: 3px; }}
   .stDataFrame th {{
-    background: #161616 !important; color: {MUTED} !important;
+    background: #F5F2ED !important; color: {MUTED} !important;
     font-size: 0.6rem !important; letter-spacing: 0.12em !important;
     text-transform: uppercase !important;
     font-family: 'Jost', sans-serif !important;
@@ -162,7 +165,7 @@ st.markdown(f"""
   .stDataFrame td {{
     font-size: 0.78rem !important;
     font-family: 'Jost', sans-serif !important;
-    border-bottom: 1px solid #1A1A1A !important;
+    border-bottom: 1px solid {BORDER} !important;
     padding: 6px 10px !important;
   }}
 
@@ -184,7 +187,7 @@ st.markdown(f"""
     color: {TEXT} !important;
   }}
   .stTabs [aria-selected="true"] {{
-    color: {GOLD} !important; border-bottom: 2px solid {GOLD} !important;
+    color: {TEXT} !important; border-bottom: 2px solid {TEXT} !important;
   }}
 
   /* ── Form Inputs ── */
@@ -195,8 +198,8 @@ st.markdown(f"""
   }}
   .stRadio label {{ font-size: 0.78rem !important; }}
   .stMultiSelect [data-baseweb="tag"] {{
-    background: rgba(201,169,110,0.12) !important;
-    border: 1px solid rgba(201,169,110,0.4) !important; border-radius: 2px !important;
+    background: rgba(26,26,26,0.06) !important;
+    border: 1px solid rgba(26,26,26,0.15) !important; border-radius: 2px !important;
   }}
 
   /* ── Buttons ── */
@@ -205,20 +208,19 @@ st.markdown(f"""
     letter-spacing: 0.12em !important; text-transform: uppercase !important;
     font-size: 0.68rem !important; font-weight: 600 !important;
     background: transparent !important;
-    border: 1px solid rgba(201,169,110,0.5) !important;
-    color: {GOLD} !important; border-radius: 2px !important;
+    border: 1px solid {TEXT} !important;
+    color: {TEXT} !important; border-radius: 2px !important;
     transition: all 0.15s;
   }}
   .stButton button:hover, .stDownloadButton button:hover {{
-    background: rgba(201,169,110,0.08) !important;
-    border-color: {GOLD} !important;
+    background: rgba(26,26,26,0.06) !important;
   }}
 
   /* ── Badges ── */
   .out-badge {{
     display: inline-block;
-    background: rgba(229,57,53,0.12);
-    border: 1px solid rgba(229,57,53,0.5);
+    background: rgba(229,57,53,0.08);
+    border: 1px solid rgba(229,57,53,0.3);
     border-radius: 2px;
     padding: 1px 6px;
     font-size: 0.6rem;
@@ -230,12 +232,12 @@ st.markdown(f"""
   /* ── Info Pills ── */
   .info-pill {{
     display: inline-block;
-    background: rgba(201,169,110,0.08);
-    border: 1px solid rgba(201,169,110,0.2);
+    background: rgba(26,26,26,0.04);
+    border: 1px solid rgba(26,26,26,0.12);
     border-radius: 2px;
     padding: 3px 10px;
     font-size: 0.68rem;
-    color: {GOLD};
+    color: {TEXT};
     letter-spacing: 0.06em;
     margin-right: 6px;
     margin-bottom: 4px;
@@ -246,13 +248,13 @@ st.markdown(f"""
   ::-webkit-scrollbar {{ width: 5px; height: 5px; }}
   ::-webkit-scrollbar-track {{ background: transparent; }}
   ::-webkit-scrollbar-thumb {{ background: {BORDER}; border-radius: 3px; }}
-  ::-webkit-scrollbar-thumb:hover {{ background: rgba(201,169,110,0.5); }}
+  ::-webkit-scrollbar-thumb:hover {{ background: {MUTED}; }}
 
   /* ── Reconciliation Panel ── */
   .recon-row {{
     display: flex; justify-content: space-between; align-items: center;
     font-size: 0.7rem; padding: 4px 0;
-    border-bottom: 1px solid rgba(42,42,42,0.5);
+    border-bottom: 1px solid {BORDER};
   }}
   .recon-ok {{ color: {TEXT}; }}
   .recon-warn {{ color: {RED}; }}
@@ -261,7 +263,7 @@ st.markdown(f"""
   /* ── Warning list ── */
   .warn-item {{
     font-size: 0.7rem; padding: 3px 0;
-    border-bottom: 1px solid rgba(42,42,42,0.3);
+    border-bottom: 1px solid {BORDER};
     color: {TEXT};
   }}
 </style>
@@ -295,7 +297,7 @@ with st.sidebar:
       <div style="font-size:0.95rem; font-weight:600; color:{TEXT}; margin-top:4px;">
         Supply Chain
       </div>
-      <div style="width:28px; height:2px; background:{GOLD}; margin-top:8px;"></div>
+      <div style="width:28px; height:2px; background:{ACCENT}; margin-top:8px;"></div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -508,7 +510,7 @@ with st.sidebar:
                         st.markdown(
                             f'<div style="font-size:0.68rem; color:{TEXT}; '
                             f'padding:2px 0 2px 8px; '
-                            f'border-left:2px solid rgba(201,169,110,0.3);">'
+                            f'border-left:2px solid {BORDER};">'
                             f'{item}</div>',
                             unsafe_allow_html=True
                         )
@@ -655,12 +657,9 @@ with st.sidebar:
 
 # ─── HEADER ─────────────────────────────────────────────────────────────────────
 st.markdown(f"""
-<div class="abaca-header">
-  <div>
-    <div class="abaca-wordmark">The Abaca Group &nbsp;\u00b7&nbsp; Supply Chain</div>
-    <h1 class="abaca-title">SC_PDF STORES SUMMARY_01</h1>
-    <div class="gold-line"></div>
-  </div>
+<div class="abaca-nav">
+  <div class="abaca-nav-brand">ABACA &nbsp;\u00b7&nbsp; Supply Chain</div>
+  <div class="abaca-nav-title">SC_PDF STORES SUMMARY_01</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1513,7 +1512,7 @@ with tab7:
             if is_rn1_group:
                 col_header = (
                     f'<div style="display:flex; align-items:center; gap:0; '
-                    f'background:rgba(201,169,110,0.18); border:1px solid {GOLD}; '
+                    f'background:rgba(26,26,26,0.04); border:1px solid {BORDER}; '
                     f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
                     f'font-size:0.68rem; font-weight:700; letter-spacing:0.1em; '
                     f'text-transform:uppercase; color:{GOLD};">'
@@ -1524,7 +1523,7 @@ with tab7:
             else:
                 col_header = (
                     f'<div style="display:flex; align-items:center; gap:0; '
-                    f'background:rgba(201,169,110,0.18); border:1px solid {GOLD}; '
+                    f'background:rgba(26,26,26,0.04); border:1px solid {BORDER}; '
                     f'border-radius:3px; padding:6px 12px; margin-bottom:2px; '
                     f'font-size:0.68rem; font-weight:700; letter-spacing:0.1em; '
                     f'text-transform:uppercase; color:{GOLD};">'
