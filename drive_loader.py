@@ -123,6 +123,7 @@ def _download_from_drive(url: str) -> List[Tuple[str, bytes]]:
         st.info(f"Found **{len(file_list)} PDF(s)** in folder — downloading…")
         progress = st.progress(0, text=f"Downloading 0 of {len(file_list)} files…")
 
+        failed_files = []
         for i, f_info in enumerate(file_list):
             fname = f_info.get("name", f"file_{i}.pdf")
             progress.progress(
@@ -134,14 +135,17 @@ def _download_from_drive(url: str) -> List[Tuple[str, bytes]]:
                 if content and content[:5].startswith(b'%PDF'):
                     results.append((fname, content))
                 else:
-                    st.warning(f"Skipped **{fname}** — not a valid PDF")
-            except Exception as e:
-                st.warning(f"Failed to download **{fname}**: {e}")
+                    failed_files.append(fname)
+            except Exception:
+                failed_files.append(fname)
 
         progress.empty()
 
-        if results:
+        if results and not failed_files:
             st.success(f"✓ Downloaded **{len(results)} PDF(s)** — parsing now…")
+        elif results and failed_files:
+            st.success(f"✓ Downloaded **{len(results)} of {len(file_list)} PDF(s)** — parsing now…")
+            st.warning(f"**{len(failed_files)} file(s) failed:** {', '.join(failed_files)}")
         else:
             st.error("**No PDFs could be downloaded** from the folder.")
 

@@ -1,9 +1,15 @@
 """HTML print report generators for pick lists, allocation sheets, and undelivered reports."""
 
+import html
 from typing import List, Tuple
 
 import pandas as pd
 from config import LOGO_B64
+
+
+def _esc(val) -> str:
+    """Escape a value for safe HTML interpolation."""
+    return html.escape(str(val)) if val is not None else ""
 
 
 def _print_header_html(report_label: str, meta_rows: List[Tuple]) -> str:
@@ -169,9 +175,9 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str,
     for _, r in df_sorted.iterrows():
         detail_rows_html += f"""
         <tr>
-          <td>{r['Store']}</td>
-          <td style="font-size:8pt; color:#888;">{r.get('PLU Code', '')}</td>
-          <td>{r['Item Description']}</td>
+          <td>{_esc(r['Store'])}</td>
+          <td style="font-size:8pt; color:#888;">{_esc(r.get('PLU Code', ''))}</td>
+          <td>{_esc(r['Item Description'])}</td>
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
 
@@ -184,27 +190,27 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str,
     for _, r in summary.iterrows():
         summary_rows_html += f"""
         <tr>
-          <td>{r['Item Description']}</td>
+          <td>{_esc(r['Item Description'])}</td>
           <td></td>
           <td></td>
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
 
     meta_rows = [
-        ("Delivery Date:", delivery_date, True),
-        ("Location:", location, False),
+        ("Delivery Date:", _esc(delivery_date), True),
+        ("Location:", _esc(location), False),
         ("Total Lines:", str(len(df_sorted)), False),
     ]
     if ordered_by:
-        meta_rows.append(("Ordered By:", ordered_by, False))
+        meta_rows.append(("Ordered By:", _esc(ordered_by), False))
 
-    header = _print_header_html(f"{location} — PICK LIST", meta_rows)
+    header = _print_header_html(f"{_esc(location)} — PICK LIST", meta_rows)
 
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<title>{location} PICKLIST</title>
+<title>{_esc(location)} PICKLIST</title>
 <style>{_print_base_css()}</style>
 </head>
 <body>
@@ -242,7 +248,7 @@ def make_picklist_html(df_loc: pd.DataFrame, location: str, delivery_date: str,
 
 <div class="print-footer">
   <span>SC_PDF STORES SUMMARY_01 · The Abaca Group</span>
-  <span>Pick List · {location}</span>
+  <span>Pick List · {_esc(location)}</span>
 </div>
 <button class="print-btn" onclick="window.print()">🖨&nbsp; Print</button>
 </body>
@@ -263,7 +269,7 @@ def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: s
     for _, r in store_summary.iterrows():
         rows_html += f"""
         <tr>
-          <td>{r['Store']}</td>
+          <td>{_esc(r['Store'])}</td>
           <td style="text-align:center;">{int(r['Order Qty']) if pd.notna(r['Order Qty']) else '-'}</td>
         </tr>"""
 
@@ -271,10 +277,10 @@ def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: s
     uom = uom_vals[0] if len(uom_vals) > 0 else ""
 
     header = _print_header_html(
-        f"{item_name} — ORDER",
+        f"{_esc(item_name)} — ORDER",
         [
-            ("Delivery Date:", delivery_date, True),
-            ("UOM:", uom, False),
+            ("Delivery Date:", _esc(delivery_date), True),
+            ("UOM:", _esc(uom), False),
             ("Total Stores:", str(len(store_summary)), False),
             ("Total Qty:", str(total_qty), False),
         ]
@@ -284,7 +290,7 @@ def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: s
 <html>
 <head>
 <meta charset="utf-8">
-<title>{item_name} — ORDER</title>
+<title>{_esc(item_name)} — ORDER</title>
 <style>
 {_print_base_css()}
   body {{ max-width: 520px; }}
@@ -310,7 +316,7 @@ def make_allocation_html(df_item: pd.DataFrame, item_name: str, delivery_date: s
 
 <div class="print-footer">
   <span>SC_PDF STORES SUMMARY_01 · The Abaca Group</span>
-  <span>Item Allocation · {item_name}</span>
+  <span>Item Allocation · {_esc(item_name)}</span>
 </div>
 <button class="print-btn" onclick="window.print()">🖨&nbsp; Print</button>
 </body>
@@ -347,26 +353,26 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
             remark_val = r.get('remarks', '') or ''
             rs_attr = f' rowspan="{span}"' if span > 1 else ''
             cls = ' class="remarks-cell"' if remark_val else ''
-            remarks_cell = f'<td{rs_attr}{cls}>{remark_val}</td>'
+            remarks_cell = f'<td{rs_attr}{cls}>{_esc(remark_val)}</td>'
             # Mark subsequent rows in this group to skip the remarks cell
             for k in range(idx + 1, idx + span):
                 skip_remarks.add(k)
 
         tr_html += f"""
         <tr>
-          <td>{delivery_date}</td>
-          <td>{r['store']}</td>
-          <td>{r['item']}</td>
-          <td style="text-align:center;">{r['qty']}</td>
+          <td>{_esc(delivery_date)}</td>
+          <td>{_esc(r['store'])}</td>
+          <td>{_esc(r['item'])}</td>
+          <td style="text-align:center;">{_esc(r['qty'])}</td>
           {remarks_cell}
         </tr>"""
 
     header = _print_header_html(
-        report_title,
+        _esc(report_title),
         [
-            ("Order Date:", order_date, False),
-            ("Delivery Date:", delivery_date, True),
-            ("Prepared by:", prepared_by.upper(), False),
+            ("Order Date:", _esc(order_date), False),
+            ("Delivery Date:", _esc(delivery_date), True),
+            ("Prepared by:", _esc(prepared_by.upper()), False),
             ("Total Items:", str(len(sorted_rows)), False),
         ]
     )
@@ -375,7 +381,7 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
 <html>
 <head>
 <meta charset="utf-8">
-<title>{report_title}</title>
+<title>{_esc(report_title)}</title>
 <style>
 {_print_base_css()}
   /* Remarks cell styling */
@@ -409,7 +415,7 @@ def make_undelivered_html(rows: list, report_title: str, order_date: str,
 
 <div class="print-footer">
   <span>SC_PDF STORES SUMMARY_01 · The Abaca Group Supply Chain</span>
-  <span>Undelivered Report · {delivery_date}</span>
+  <span>Undelivered Report · {_esc(delivery_date)}</span>
 </div>
 
 <button class="print-btn" onclick="window.print()">🖨&nbsp; Print</button>

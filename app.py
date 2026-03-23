@@ -616,21 +616,39 @@ with st.sidebar:
     if loaded_session and loaded_session.name != st.session_state.session_loaded_key:
         try:
             data = json.loads(loaded_session.read())
-            df_restored = pd.DataFrame(data.get('df', []))
-            if not df_restored.empty:
-                for col_name in ['Order Qty', 'Total Amount', 'Days to Last']:
-                    if col_name in df_restored.columns:
-                        df_restored[col_name] = clean_numeric(df_restored[col_name])
-            st.session_state.df               = df_restored
-            st.session_state.file_names       = set(data.get('file_names', []))
-            st.session_state.undelivered_rows  = data.get('undelivered_rows', [])
-            st.session_state.parse_warnings    = data.get('parse_warnings', [])
-            st.session_state.unavailable_items = data.get('unavailable_items', [])
-            st.session_state.manual_orders     = data.get('manual_orders', [])
-            st.session_state.pdf_reconciliation = data.get('pdf_reconciliation', [])
-            st.session_state.session_loaded_key = loaded_session.name
-            st.success("\u2705 Session restored!")
-            st.rerun()
+            if not isinstance(data, dict):
+                st.error("**Invalid session file** — expected a JSON object.")
+            elif 'df' not in data:
+                st.error("**Invalid session file** — missing order data. Is this a session file from this app?")
+            else:
+                EXPECTED_COLS = {
+                    'Store', 'Order Date', 'Delivery Date', 'Location',
+                    'PLU Code', 'Item Description', 'Order Qty', 'UOM',
+                    'Total Amount', 'Days to Last', 'Ordered By',
+                }
+                df_restored = pd.DataFrame(data['df'])
+                if not df_restored.empty:
+                    missing = EXPECTED_COLS - set(df_restored.columns)
+                    if missing:
+                        st.error(f"**Invalid session file** — missing columns: {', '.join(sorted(missing))}")
+                    else:
+                        for col_name in ['Order Qty', 'Total Amount', 'Days to Last']:
+                            if col_name in df_restored.columns:
+                                df_restored[col_name] = clean_numeric(df_restored[col_name])
+                        st.session_state.df               = df_restored
+                        st.session_state.file_names       = set(data.get('file_names', []))
+                        st.session_state.undelivered_rows  = data.get('undelivered_rows', [])
+                        st.session_state.parse_warnings    = data.get('parse_warnings', [])
+                        st.session_state.unavailable_items = data.get('unavailable_items', [])
+                        st.session_state.manual_orders     = data.get('manual_orders', [])
+                        st.session_state.pdf_reconciliation = data.get('pdf_reconciliation', [])
+                        st.session_state.session_loaded_key = loaded_session.name
+                        st.success("\u2705 Session restored!")
+                        st.rerun()
+                else:
+                    st.warning("Session file loaded but contains no order data.")
+        except json.JSONDecodeError:
+            st.error("**Invalid file** — not valid JSON.")
         except Exception as e:
             st.error(f"Could not load session: {e}")
 
@@ -699,6 +717,7 @@ if show_oos_only:
 total_stores = filtered['Store'].nunique()
 unique_items = filtered['Item Description'].nunique()
 total_lines  = len(filtered)
+nan_amount_count = int(filtered['Total Amount'].isna().sum()) if 'Total Amount' in filtered.columns else 0
 total_amount = filtered['Total Amount'].sum()
 oos_count = int((filtered['Days to Last'] == 0).sum())
 
@@ -731,6 +750,9 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+if nan_amount_count > 0:
+    st.caption(f"\u26a0\ufe0f {nan_amount_count} item(s) have missing amounts and are excluded from the total.")
 
 
 # ─── DELIVERY DATE PILLS ─────────────────────────────────────────────────────────
