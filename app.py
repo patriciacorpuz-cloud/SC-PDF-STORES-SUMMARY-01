@@ -58,34 +58,32 @@ st.markdown(f"""
     border-color: rgba(201,169,110,0.12) !important;
   }}
   /* ── Expander fixes ── */
-  /* Hide the Material Symbols icon that renders as "arrow_right" text.
-     The icon uses font-family "Material Symbols Rounded" — override it
-     to show a simple CSS arrow instead. */
-  [data-testid="stExpanderToggleIcon"] {{
-    font-family: 'Jost', sans-serif !important;
-    font-size: 0 !important;
-    width: 14px !important;
-    min-width: 14px !important;
-    overflow: hidden !important;
-  }}
-  [data-testid="stExpanderToggleIcon"]::before {{
-    content: '\\25B8' !important;
-    font-size: 0.75rem !important;
-    color: {GOLD} !important;
-  }}
-  details[open] [data-testid="stExpanderToggleIcon"]::before {{
-    content: '\\25BE' !important;
-  }}
+  /* The Material Symbols font fails on Streamlit Cloud, rendering
+     "arrow_right" as literal text. Make it invisible via color. */
   [data-testid="stExpander"] summary {{
     font-size: 0.78rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em !important;
     color: {TEXT} !important;
     padding: 10px 14px !important;
+    position: relative !important;
+  }}
+  [data-testid="stExpander"] summary > * {{
+    color: {TEXT} !important;
   }}
   [data-testid="stExpander"] summary p {{
     font-size: 0.78rem !important;
     font-weight: 600 !important;
+  }}
+  /* Make the icon text invisible — works on any Streamlit version */
+  [data-testid="stExpander"] summary span[style*="Material"],
+  [data-testid="stExpander"] summary .material-symbols-rounded,
+  [data-testid="stExpanderToggleIcon"] {{
+    color: transparent !important;
+    font-size: 0.01px !important;
+    width: 1px !important;
+    overflow: hidden !important;
+    letter-spacing: -1em !important;
   }}
   [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
