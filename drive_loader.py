@@ -9,8 +9,8 @@ def _parse_drive_link(url: str) -> Tuple[str, str]:
     link_type is 'folder', 'file', or 'unknown'.
     """
     url = url.strip()
-    # Folder link: https://drive.google.com/drive/folders/FOLDER_ID...
-    m = re.search(r'drive\.google\.com/drive/folders/([A-Za-z0-9_-]+)', url)
+    # Folder link — handles /drive/folders/, /drive/u/0/folders/, /drive/u/1/folders/
+    m = re.search(r'drive\.google\.com/drive/(?:u/\d+/)?folders/([A-Za-z0-9_-]+)', url)
     if m:
         return 'folder', m.group(1)
     # File link: https://drive.google.com/file/d/FILE_ID/...
