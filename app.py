@@ -59,24 +59,20 @@ st.markdown(f"""
   }}
   /* ── Expander fixes ── */
   /* Hide broken Material Icon text ("arrow_right" / "arrow_down") */
-  [data-testid="stExpander"] summary svg {{
-    display: inline-block !important;
+  [data-testid="stExpander"] [data-testid="stMarkdownContainer"] p {{
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em !important;
   }}
-  [data-testid="stExpander"] summary span[data-testid="stExpanderToggleIcon"] {{
-    font-size: 0 !important;
-    width: 16px !important;
-    height: 16px !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }}
-  [data-testid="stExpander"] summary span[data-testid="stExpanderToggleIcon"]::after {{
-    content: '\\25B8' !important;
-    font-size: 0.8rem !important;
-    color: {GOLD} !important;
-  }}
-  [data-testid="stExpander"][open] summary span[data-testid="stExpanderToggleIcon"]::after {{
-    content: '\\25BE' !important;
+  /* Kill the icon text — target all possible renderings */
+  [data-testid="stExpander"] summary > span:first-child,
+  [data-testid="stExpanderToggleIcon"],
+  .st-emotion-cache-1h9usn1,
+  [data-testid="stExpander"] summary [class*="Icon"] {{
+    font-size: 0px !important;
+    width: 0px !important;
+    overflow: hidden !important;
+    display: none !important;
   }}
   [data-testid="stExpander"] summary {{
     font-size: 0.78rem !important;
@@ -84,6 +80,7 @@ st.markdown(f"""
     letter-spacing: 0.04em !important;
     color: {TEXT} !important;
     padding: 10px 14px !important;
+    gap: 0 !important;
   }}
   [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
