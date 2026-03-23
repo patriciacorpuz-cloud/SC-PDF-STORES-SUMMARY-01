@@ -57,18 +57,42 @@ st.markdown(f"""
     margin: 16px 0 !important;
     border-color: rgba(201,169,110,0.12) !important;
   }}
-  /* Clean up Streamlit expander arrows in sidebar */
-  section[data-testid="stSidebar"] [data-testid="stExpander"] summary {{
+  /* ── Expander fixes ── */
+  /* Hide broken Material Icon text ("arrow_right" / "arrow_down") */
+  [data-testid="stExpander"] summary svg {{
+    display: inline-block !important;
+  }}
+  [data-testid="stExpander"] summary span[data-testid="stExpanderToggleIcon"] {{
+    font-size: 0 !important;
+    width: 16px !important;
+    height: 16px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }}
+  [data-testid="stExpander"] summary span[data-testid="stExpanderToggleIcon"]::after {{
+    content: '\\25B8' !important;
+    font-size: 0.8rem !important;
+    color: {GOLD} !important;
+  }}
+  [data-testid="stExpander"][open] summary span[data-testid="stExpanderToggleIcon"]::after {{
+    content: '\\25BE' !important;
+  }}
+  [data-testid="stExpander"] summary {{
     font-size: 0.78rem !important;
     font-weight: 600 !important;
     letter-spacing: 0.04em !important;
     color: {TEXT} !important;
+    padding: 10px 14px !important;
   }}
-  section[data-testid="stSidebar"] [data-testid="stExpander"] {{
+  [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
     border-radius: 4px !important;
     background: rgba(20,20,20,0.6) !important;
     margin-bottom: 6px !important;
+  }}
+  [data-testid="stExpander"] [data-testid="stExpanderDetails"] {{
+    padding: 0 14px 10px 14px !important;
   }}
   /* Hide default Streamlit alert boxes in sidebar after loading */
   section[data-testid="stSidebar"] [data-testid="stAlert"] {{
@@ -420,71 +444,70 @@ with st.sidebar:
                         unsafe_allow_html=True
                     )
 
-        # ── Parsing Warnings Panel ───────────────────────────────────────────
+        # ── Parsing Notes Panel ────────────────────────────────────────────
         warn_list = st.session_state.parse_warnings
-        # Filter out noisy warnings
         filtered_warnings = [
             w for w in warn_list
             if 'DO NOT TOUCH' not in w.upper()
             and 'row skipped' not in w.lower()
         ]
         if filtered_warnings:
-            # Group by type for cleaner display
             blank_amt = [w for w in filtered_warnings if 'Blank amount' in w]
             unknown_loc = [w for w in filtered_warnings if 'Unknown location' in w]
             other = [w for w in filtered_warnings
                      if 'Blank amount' not in w and 'Unknown location' not in w]
 
             with st.expander(
-                f"Parsing Notes \u2014 {len(filtered_warnings)} items",
+                f"Parsing Notes ({len(filtered_warnings)})",
                 expanded=False
             ):
                 if other:
                     for w in other:
                         st.markdown(
-                            f'<div class="warn-item" style="color:{RED};">'
-                            f'\u25b2 {w}</div>',
+                            f'<div class="warn-item" style="color:{RED};">{w}</div>',
                             unsafe_allow_html=True
                         )
+
                 if blank_amt:
+                    # Extract unique item names from warnings
+                    blank_items = set()
+                    for w in blank_amt:
+                        # "Blank amount: STORE -> ITEM (UOM: X)"
+                        parts = w.replace('Blank amount: ', '').split(' -> ')
+                        if len(parts) == 2:
+                            item_part = parts[1].split(' (UOM:')[0]
+                            blank_items.add(item_part)
                     st.markdown(
-                        f'<div style="font-size:0.62rem; color:{MUTED}; '
-                        f'letter-spacing:0.1em; text-transform:uppercase; '
-                        f'font-weight:600; margin:8px 0 4px 0;">'
-                        f'Blank Amounts ({len(blank_amt)})</div>',
+                        f'<div style="font-size:0.65rem; color:{MUTED}; '
+                        f'margin:6px 0 4px 0;">'
+                        f'<strong style="color:{TEXT};">Blank Amounts</strong> '
+                        f'\u00b7 {len(blank_amt)} rows across {len(blank_items)} items'
+                        f'<br>Zero-cost supplies (bags, paper, boxes) \u2014 '
+                        f'included in data with amount = 0</div>',
                         unsafe_allow_html=True
                     )
-                    for w in blank_amt[:10]:
-                        # Extract just item name from "Blank amount: STORE -> ITEM (UOM: X)"
-                        short = w.replace('Blank amount: ', '')
-                        st.markdown(
-                            f'<div class="warn-item">{short}</div>',
-                            unsafe_allow_html=True
-                        )
-                    if len(blank_amt) > 10:
-                        st.markdown(
-                            f'<div style="font-size:0.65rem;color:{MUTED};padding:4px 0;">'
-                            f'+ {len(blank_amt) - 10} more</div>',
-                            unsafe_allow_html=True
-                        )
+
                 if unknown_loc:
+                    unknown_items = set()
+                    for w in unknown_loc:
+                        parts = w.replace('Unknown location: ', '').replace(' \u2014 set to UNKNOWN', '').split(' -> ')
+                        if len(parts) == 2:
+                            unknown_items.add(parts[1])
                     st.markdown(
-                        f'<div style="font-size:0.62rem; color:{MUTED}; '
-                        f'letter-spacing:0.1em; text-transform:uppercase; '
-                        f'font-weight:600; margin:8px 0 4px 0;">'
-                        f'Unknown Locations ({len(unknown_loc)})</div>',
+                        f'<div style="font-size:0.65rem; color:{MUTED}; '
+                        f'margin:6px 0 4px 0;">'
+                        f'<strong style="color:{TEXT};">Unknown Locations</strong> '
+                        f'\u00b7 {len(unknown_loc)} rows across {len(unknown_items)} items'
+                        f'<br>Items that appear first on page before any location header \u2014 '
+                        f'listed under "UNKNOWN" in Pick List</div>',
                         unsafe_allow_html=True
                     )
-                    for w in unknown_loc[:5]:
-                        short = w.replace('Unknown location: ', '').replace(' \u2014 set to UNKNOWN', '')
+                    for item in sorted(unknown_items):
                         st.markdown(
-                            f'<div class="warn-item">{short}</div>',
-                            unsafe_allow_html=True
-                        )
-                    if len(unknown_loc) > 5:
-                        st.markdown(
-                            f'<div style="font-size:0.65rem;color:{MUTED};padding:4px 0;">'
-                            f'+ {len(unknown_loc) - 5} more</div>',
+                            f'<div style="font-size:0.68rem; color:{TEXT}; '
+                            f'padding:2px 0 2px 8px; '
+                            f'border-left:2px solid rgba(201,169,110,0.3);">'
+                            f'{item}</div>',
                             unsafe_allow_html=True
                         )
 
@@ -509,7 +532,7 @@ with st.sidebar:
             lambda x: '\u26a0\ufe0f Possible duplicate' if x in dup_stores else '\u2705'
         )
 
-        with st.expander(f"\U0001F4CB Store Roster ({len(store_counts)} stores)", expanded=False):
+        with st.expander(f"Store Roster ({len(store_counts)} stores)", expanded=False):
             st.markdown(
                 f'<div style="font-size:0.65rem; color:{MUTED}; '
                 f'letter-spacing:0.1em; text-transform:uppercase; '
