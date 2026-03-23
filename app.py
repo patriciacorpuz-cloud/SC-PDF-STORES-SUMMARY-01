@@ -58,21 +58,23 @@ st.markdown(f"""
     border-color: rgba(201,169,110,0.12) !important;
   }}
   /* ── Expander fixes ── */
-  /* Hide broken Material Icon text ("arrow_right" / "arrow_down") */
-  [data-testid="stExpander"] [data-testid="stMarkdownContainer"] p {{
-    font-size: 0.78rem !important;
-    font-weight: 600 !important;
-    letter-spacing: 0.04em !important;
-  }}
-  /* Kill the icon text — target all possible renderings */
-  [data-testid="stExpander"] summary > span:first-child,
-  [data-testid="stExpanderToggleIcon"],
-  .st-emotion-cache-1h9usn1,
-  [data-testid="stExpander"] summary [class*="Icon"] {{
-    font-size: 0px !important;
-    width: 0px !important;
+  /* Hide the Material Symbols icon that renders as "arrow_right" text.
+     The icon uses font-family "Material Symbols Rounded" — override it
+     to show a simple CSS arrow instead. */
+  [data-testid="stExpanderToggleIcon"] {{
+    font-family: 'Jost', sans-serif !important;
+    font-size: 0 !important;
+    width: 14px !important;
+    min-width: 14px !important;
     overflow: hidden !important;
-    display: none !important;
+  }}
+  [data-testid="stExpanderToggleIcon"]::before {{
+    content: '\\25B8' !important;
+    font-size: 0.75rem !important;
+    color: {GOLD} !important;
+  }}
+  details[open] [data-testid="stExpanderToggleIcon"]::before {{
+    content: '\\25BE' !important;
   }}
   [data-testid="stExpander"] summary {{
     font-size: 0.78rem !important;
@@ -80,7 +82,10 @@ st.markdown(f"""
     letter-spacing: 0.04em !important;
     color: {TEXT} !important;
     padding: 10px 14px !important;
-    gap: 0 !important;
+  }}
+  [data-testid="stExpander"] summary p {{
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
   }}
   [data-testid="stExpander"] {{
     border: 1px solid {BORDER} !important;
@@ -421,6 +426,11 @@ with st.sidebar:
             else:
                 label = f"PDF Reconciliation \u2014 {len(recon)} PDFs verified"
             with st.expander(label, expanded=mismatches > 0):
+                st.markdown(
+                    f'<div style="font-size:0.65rem; color:{MUTED}; margin-bottom:8px;">'
+                    f'Compares parsed totals against PDF header amounts to catch missing rows</div>',
+                    unsafe_allow_html=True
+                )
                 # Show mismatches first, then matches
                 sorted_recon = sorted(recon, key=lambda r: (r['status'] == 'match', r['pdf']))
                 for r in sorted_recon:
@@ -458,6 +468,12 @@ with st.sidebar:
                 f"Parsing Notes ({len(filtered_warnings)})",
                 expanded=False
             ):
+                st.markdown(
+                    f'<div style="font-size:0.65rem; color:{MUTED}; margin-bottom:8px;">'
+                    f'Items with missing data from the PDFs \u2014 '
+                    f'most are zero-cost supplies or first-row items without a location</div>',
+                    unsafe_allow_html=True
+                )
                 if other:
                     for w in other:
                         st.markdown(
@@ -531,10 +547,9 @@ with st.sidebar:
 
         with st.expander(f"Store Roster ({len(store_counts)} stores)", expanded=False):
             st.markdown(
-                f'<div style="font-size:0.65rem; color:{MUTED}; '
-                f'letter-spacing:0.1em; text-transform:uppercase; '
-                f'font-weight:600; margin-bottom:8px;">'
-                f'Loaded stores \u2014 check for missing or duplicate uploads</div>',
+                f'<div style="font-size:0.65rem; color:{MUTED}; margin-bottom:8px;">'
+                f'All stores parsed from uploaded PDFs \u2014 '
+                f'check for missing or duplicate uploads</div>',
                 unsafe_allow_html=True
             )
             for _, row in store_counts.sort_values('Store').iterrows():
